@@ -1,0 +1,64 @@
+From 28c856da9e572a8a5717df2771f02cdb0b4af360 Mon Sep 17 00:00:00 2001
+From: Sabeeh Khan <sabeeh-khan@ti.com>
+Date: Wed, 18 Dec 2024 10:42:57 -0600
+Subject: [PATCH] arm64: dts: enable cc33xx on imx8mp
+
+Signed-off-by: Sabeeh Khan <sabeeh-khan@ti.com>
+---
+ .../dts/freescale/imx8mp-evk-usdhc1-m2.dts    | 24 +++++++++++++------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/freescale/imx8mp-evk-usdhc1-m2.dts b/arch/arm64/boot/dts/freescale/imx8mp-evk-usdhc1-m2.dts
+index 397a60436c2e..dbc285609116 100644
+--- a/arch/arm64/boot/dts/freescale/imx8mp-evk-usdhc1-m2.dts
++++ b/arch/arm64/boot/dts/freescale/imx8mp-evk-usdhc1-m2.dts
+@@ -29,6 +29,7 @@ &iomuxc {
+ 	pinctrl_reg_usdhc1_vmmc: regusdhc1vmmcgrp {
+ 		fsl,pins = <
+ 			MX8MP_IOMUXC_SD1_DATA4__GPIO2_IO06	0x140
++			MX8MP_IOMUXC_SD1_DATA7__GPIO2_IO09  0x000
+ 		>;
+ 	};
+ 
+@@ -86,22 +87,31 @@ &pcie_phy {
+ };
+ 
+ &usdhc1 {
+-	pinctrl-names = "default", "state_100mhz", "state_200mhz";
++	pinctrl-names = "default";
+ 	pinctrl-0 = <&pinctrl_usdhc1>;
+-	pinctrl-1 = <&pinctrl_usdhc1_100mhz>;
+-	pinctrl-2 = <&pinctrl_usdhc1_200mhz>;
++	bus-width = <4>;
+ 	keep-power-in-suspend;
++	cap-power-off-card;
+ 	non-removable;
+ 	wakeup-source;
+ 	mmc-pwrseq = <&usdhc1_pwrseq>;
+ 	vmmc-supply = <&reg_usdhc1_vmmc>;
+-	fsl,sdio-async-interrupt-enabled;
+ 	status = "okay";
++	#address-cells = <1>;
++	#size-cells = <0>;
+ 
+-	wifi_wake_host {
+-		compatible = "nxp,wifi-wake-host";
++	wlcore: wlcore@2 {
++		compatible = "ti,cc33xx";
++		reg = <2>;
+ 		interrupt-parent = <&gpio2>;
+ 		interrupts = <9 IRQ_TYPE_LEVEL_LOW>;
+-		interrupt-names = "host-wake";
++	};
++};
++
++&uart1 {
++	bluetooth {
++		compatible = "ti,cc33xx-bt";
++		cc33xx-supply = <&wlan_en>;
++		max-speed = <115200>;
+ 	};
+ };
+-- 
+2.34.1
+
