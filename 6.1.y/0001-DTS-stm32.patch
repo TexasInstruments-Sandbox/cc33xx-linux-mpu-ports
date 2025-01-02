@@ -1,0 +1,131 @@
+From ac2b3bedbf3eb3920967f077eefb93a271bc2289 Mon Sep 17 00:00:00 2001
+From: Sabeeh Khan <sabeeh-khan@ti.com>
+Date: Fri, 30 Aug 2024 05:46:22 -0500
+Subject: [PATCH] DTS stm32
+
+---
+ arch/arm/boot/dts/stm32mp15-pinctrl.dtsi |  6 +--
+ arch/arm/boot/dts/stm32mp157d-dk1.dts    | 62 ++++++++++++++++++++++++
+ arch/arm/boot/dts/stm32mp15xx-dkx.dtsi   | 12 -----
+ 3 files changed, 65 insertions(+), 15 deletions(-)
+
+diff --git a/arch/arm/boot/dts/stm32mp15-pinctrl.dtsi b/arch/arm/boot/dts/stm32mp15-pinctrl.dtsi
+index 20b4f0d..e95e4d1 100644
+--- a/arch/arm/boot/dts/stm32mp15-pinctrl.dtsi
++++ b/arch/arm/boot/dts/stm32mp15-pinctrl.dtsi
+@@ -1829,15 +1829,15 @@ pins1 {
+ 				 <STM32_PINMUX('F', 5, AF9)>, /* SDMMC3_D2 */
+ 				 <STM32_PINMUX('D', 7, AF10)>, /* SDMMC3_D3 */
+ 				 <STM32_PINMUX('F', 1, AF9)>; /* SDMMC3_CMD */
+-			slew-rate = <1>;
++			slew-rate = <2>;
+ 			drive-push-pull;
+ 			bias-pull-up;
+ 		};
+ 		pins2 {
+ 			pinmux = <STM32_PINMUX('G', 15, AF10)>; /* SDMMC3_CK */
+-			slew-rate = <2>;
++			slew-rate = <3>;
+ 			drive-push-pull;
+-			bias-pull-up;
++			bias-disable;
+ 		};
+ 	};
+ 
+diff --git a/arch/arm/boot/dts/stm32mp157d-dk1.dts b/arch/arm/boot/dts/stm32mp157d-dk1.dts
+index 4bc9fc8..d11d82d 100644
+--- a/arch/arm/boot/dts/stm32mp157d-dk1.dts
++++ b/arch/arm/boot/dts/stm32mp157d-dk1.dts
+@@ -24,4 +24,66 @@ aliases {
+ 	chosen {
+ 		stdout-path = "serial0:115200n8";
+ 	};
++
++/*
++	wlan_en: fixedregulator@10 {
++		compatible = "regulator-fixed";
++		regulator-name = "wlan-en-regulator";
++
++		gpio = <&gpioa 8 GPIO_ACTIVE_HIGH>;
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		startup-delay-us = <70000>;
++		enable-active-high;
++	};
++*/
++
++	wlan_en: wlan_en_pwrseq {
++		compatible = "mmc-pwrseq-simple";
++		reset-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
++		post-power-on-delay-ms = <70>;
++	};
++};
++
++&pinctrl {
++	wl_irq_pins: wl-irq-pins {
++		pins {
++			pinmux = <STM32_PINMUX('G', 2, GPIO)>;
++			bias-disable;
++		};
++	};
++};
++
++&sdmmc3 {
++	pinctrl-names = "default", "opendrain", "sleep";
++	pinctrl-0 = <&sdmmc3_b4_pins_a>;
++	pinctrl-1 = <&sdmmc3_b4_od_pins_a>;
++	pinctrl-2 = <&sdmmc3_b4_sleep_pins_a>;
++	status = "okay";
++
++	// ST's suggestion
++	// no-sd;
++	// no-mmc;
++
++	// THIS WORKS WITH 1BIT BUS WIDTH
++	arm,primecell-periphid = <0x00253180>;
++	non-removable;
++	st,neg-edge;
++	vmmc-supply = <&v3v3>;
++	mmc-pwrseq = <&wlan_en>;
++	bus-width = <4>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	cap-power-off-card;
++	max-frequency = <5000000>;
++
++	wlcore: wlcore@0 {
++		compatible = "ti,cc33xx";
++		reg = <2>;
++		interrupt-parent = <&gpiog>;
++		interrupts = <2 IRQ_TYPE_LEVEL_HIGH>;
++		irq-gpio = <&gpiog 2 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&wl_irq_pins>;
++	};
+ };
+diff --git a/arch/arm/boot/dts/stm32mp15xx-dkx.dtsi b/arch/arm/boot/dts/stm32mp15xx-dkx.dtsi
+index f280723..68b0c4b 100644
+--- a/arch/arm/boot/dts/stm32mp15xx-dkx.dtsi
++++ b/arch/arm/boot/dts/stm32mp15xx-dkx.dtsi
+@@ -598,18 +598,6 @@ &sdmmc1 {
+ 	status = "okay";
+ };
+ 
+-&sdmmc3 {
+-	pinctrl-names = "default", "opendrain", "sleep";
+-	pinctrl-0 = <&sdmmc3_b4_pins_a>;
+-	pinctrl-1 = <&sdmmc3_b4_od_pins_a>;
+-	pinctrl-2 = <&sdmmc3_b4_sleep_pins_a>;
+-	broken-cd;
+-	st,neg-edge;
+-	bus-width = <4>;
+-	vmmc-supply = <&v3v3>;
+-	status = "disabled";
+-};
+-
+ &spi4 {
+ 	pinctrl-names = "default", "sleep";
+ 	pinctrl-0 = <&spi4_pins_b>;
+-- 
+2.34.1
+
