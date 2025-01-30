@@ -1,14 +1,14 @@
-From 2a33b3188c8668b471920965ba6cae8d1f727448 Mon Sep 17 00:00:00 2001
+From f2e6b6303710dcfd1f4f6994c525abff82f0ded7 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
 Date: Tue, 12 Nov 2024 16:19:14 -0600
 Subject: [PATCH] arm64: dts: enable cc33xx on imx93 9x9 qsb
 
 ---
- .../boot/dts/freescale/imx93-9x9-qsb.dts      | 25 +++++++++++--------
- 1 file changed, 14 insertions(+), 11 deletions(-)
+ .../boot/dts/freescale/imx93-9x9-qsb.dts      | 26 +++++++++++--------
+ 1 file changed, 15 insertions(+), 11 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts b/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts
-index fba9380bdc69..bd636928d281 100644
+index fba9380bdc69..bd2e50a2efa5 100644
 --- a/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts
 +++ b/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts
 @@ -135,7 +135,7 @@ reg_usdhc3_vmmc: regulator-usdhc3 {
@@ -36,7 +36,7 @@ index fba9380bdc69..bd636928d281 100644
  	};
  
  	reg_audio_pwr: regulator-audio-pwr {
-@@ -517,26 +520,26 @@ &usdhc2 {
+@@ -517,26 +520,27 @@ &usdhc2 {
  };
  
  &usdhc3 {
@@ -54,6 +54,7 @@ index fba9380bdc69..bd636928d281 100644
  	non-removable;
 -	wakeup-source;
 -	fsl,sdio-async-interrupt-enabled;
++	max-frequency = <10000000>;
  	status = "okay";
  
 -	wifi_wake_host {
