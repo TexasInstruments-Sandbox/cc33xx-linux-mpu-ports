@@ -11,4 +11,5 @@ version:
 | 4.14.y | [1.0.0.6](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.6) |
 | 5.4.y | [1.0.0.6](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.6) |
 | 5.10.y | [1.0.0.6](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.6) |
+| ti-linux-6.6.y | [1.0.0.8](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.8) |
 
