@@ -1,14 +1,14 @@
-From f2e6b6303710dcfd1f4f6994c525abff82f0ded7 Mon Sep 17 00:00:00 2001
+From 4b094acacddce82b1c194eae86aa6cb302714a4a Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
-Date: Tue, 12 Nov 2024 16:19:14 -0600
+Date: Tue, 4 Mar 2025 13:02:47 -0600
 Subject: [PATCH] arm64: dts: enable cc33xx on imx93 9x9 qsb
 
 ---
- .../boot/dts/freescale/imx93-9x9-qsb.dts      | 26 +++++++++++--------
- 1 file changed, 15 insertions(+), 11 deletions(-)
+ .../boot/dts/freescale/imx93-9x9-qsb.dts      | 48 +++++++++----------
+ 1 file changed, 23 insertions(+), 25 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts b/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts
-index fba9380bdc69..bd2e50a2efa5 100644
+index fba9380bdc69..4ce672769765 100644
 --- a/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts
 +++ b/arch/arm64/boot/dts/freescale/imx93-9x9-qsb.dts
 @@ -135,7 +135,7 @@ reg_usdhc3_vmmc: regulator-usdhc3 {
@@ -36,7 +36,26 @@ index fba9380bdc69..bd2e50a2efa5 100644
  	};
  
  	reg_audio_pwr: regulator-audio-pwr {
-@@ -517,26 +520,27 @@ &usdhc2 {
+@@ -421,18 +424,6 @@ &lpuart1 { /* console */
+ 	status = "okay";
+ };
+ 
+-&lpuart5 {
+-	/* BT */
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&pinctrl_uart5>;
+-	pinctrl-assert-gpios = <&pcal6524 19 GPIO_ACTIVE_HIGH>;
+-	status = "okay";
+-
+-	bluetooth {
+-		compatible = "nxp,88w8987-bt";
+-	};
+-};
+-
+ &micfil {
+ 	#sound-dai-cells = <0>;
+ 	pinctrl-names = "default";
+@@ -517,26 +508,33 @@ &usdhc2 {
  };
  
  &usdhc3 {
@@ -59,6 +78,7 @@ index fba9380bdc69..bd2e50a2efa5 100644
  
 -	wifi_wake_host {
 -		compatible = "nxp,wifi-wake-host";
+-		interrupt-parent = <&pcal6524>;
 +	#address-cells = <1>;
 +	#size-cells = <0>;
 +
@@ -66,10 +86,17 @@ index fba9380bdc69..bd2e50a2efa5 100644
 +		compatible = "ti,cc33xx";
 +		reg = <2>;
 +		//compatible = "nxp,wifi-wake-host";
- 		interrupt-parent = <&pcal6524>;
++		//interrupt-parent = <&pcal6524>;
  		/* pcal6524 IO expander limitation: only support edge-triggered irq */
- 		interrupts = <5 IRQ_TYPE_EDGE_FALLING>;
+-		interrupts = <5 IRQ_TYPE_EDGE_FALLING>;
 -		interrupt-names = "host-wake";
++		//interrupts = <5 IRQ_TYPE_EDGE_FALLING>;
++	};
++
++	// TI-BLE-SDIO interface
++	btti: btti@1 {
++		compatible = "ti,cc33xxbt";
++		reg = <1>;
  	};
  };
  

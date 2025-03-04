@@ -1,17 +1,35 @@
-From d27179a3215096acf2de9439c92937a4bd228b02 Mon Sep 17 00:00:00 2001
+From d97661160d3565cbfa49735cc6d744ab262c3dc0 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
-Date: Tue, 12 Nov 2024 16:18:53 -0600
+Date: Tue, 4 Mar 2025 13:02:47 -0600
 Subject: [PATCH] arm64: imx_v8_defconfig: enable CC33XX
 
+Signed-off-by: Sabeeh Khan <sabeeh-khan@ti.com>
 ---
- arch/arm64/configs/imx_v8_defconfig | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ arch/arm64/configs/imx_v8_defconfig | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/arch/arm64/configs/imx_v8_defconfig b/arch/arm64/configs/imx_v8_defconfig
-index 10979905f06e..ea18897e2ef8 100644
+index 10979905f06e..c1562a6b7281 100644
 --- a/arch/arm64/configs/imx_v8_defconfig
 +++ b/arch/arm64/configs/imx_v8_defconfig
-@@ -367,8 +367,8 @@ CONFIG_USB_NET_MCS7830=m
+@@ -179,11 +179,14 @@ CONFIG_BT_HCIUART_BCM=y
+ CONFIG_BT_HCIUART_QCA=y
+ CONFIG_BT_HCIVHCI=y
+ CONFIG_BT_NXPUART=m
+-CONFIG_CFG80211=y
++CONFIG_BT_TI=m
++CONFIG_BT_TI_SDIO=m
++CONFIG_CFG80211=m
+ CONFIG_NL80211_TESTMODE=y
+ CONFIG_CFG80211_WEXT=y
+-CONFIG_MAC80211=y
++CONFIG_MAC80211=m
+ CONFIG_MAC80211_LEDS=y
++CONFIG_RFKILL=m
+ CONFIG_NET_9P=y
+ CONFIG_NET_9P_VIRTIO=y
+ CONFIG_NFC=m
+@@ -367,8 +370,8 @@ CONFIG_USB_NET_MCS7830=m
  CONFIG_USB_NET_CDC_SUBSET=m
  CONFIG_USB_NET_ZAURUS=m
  CONFIG_HOSTAP=y
