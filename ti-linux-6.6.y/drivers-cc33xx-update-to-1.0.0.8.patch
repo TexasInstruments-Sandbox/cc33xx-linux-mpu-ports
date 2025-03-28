@@ -1,4 +1,4 @@
-From bde3e32a0132b43a187325335cecacf5b31304d6 Mon Sep 17 00:00:00 2001
+From fa652e56fd2414b97195deaaa21cd6e8d7578386 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
 Date: Sun, 27 Oct 2024 00:01:44 -0500
 Subject: [PATCH] drivers: cc33xx: update to 1.0.0.8
@@ -9,7 +9,7 @@ update ti-linux-6.6.y with latest driver from CC33xx SDK 1.0.0.8
  drivers/bluetooth/Makefile                |    6 +
  drivers/bluetooth/btti_debugfs.c          |  156 ++
  drivers/bluetooth/btti_drv.h              |   85 +
- drivers/bluetooth/btti_main.c             |  482 +++++
+ drivers/bluetooth/btti_main.c             |  480 +++++
  drivers/bluetooth/btti_sdio.c             | 1023 ++++++++++
  drivers/bluetooth/btti_sdio.h             |   80 +
  drivers/bluetooth/btti_uart.c             |  742 +++++++
@@ -28,7 +28,7 @@ update ti-linux-6.6.y with latest driver from CC33xx SDK 1.0.0.8
  drivers/net/wireless/ti/cc33xx/ps.c       |    2 -
  drivers/net/wireless/ti/cc33xx/rx.c       |    3 +
  drivers/net/wireless/ti/cc33xx/rx.h       |    6 +-
- 23 files changed, 5666 insertions(+), 779 deletions(-)
+ 23 files changed, 5664 insertions(+), 779 deletions(-)
  create mode 100644 drivers/bluetooth/btti_debugfs.c
  create mode 100644 drivers/bluetooth/btti_drv.h
  create mode 100644 drivers/bluetooth/btti_main.c
@@ -363,10 +363,10 @@ index 000000000000..78fdf7f7f7b9
 +#endif
 diff --git a/drivers/bluetooth/btti_main.c b/drivers/bluetooth/btti_main.c
 new file mode 100644
-index 000000000000..6857d8b90df0
+index 000000000000..7a96ea724a0e
 --- /dev/null
 +++ b/drivers/bluetooth/btti_main.c
-@@ -0,0 +1,482 @@
+@@ -0,0 +1,480 @@
 +/*
 + * This file is part of TI BLE over SDIO
 + *
@@ -737,8 +737,6 @@ index 000000000000..6857d8b90df0
 +	SET_HCIDEV_DEV(hdev, &sdiodev->func->dev);
 +
 +	set_bit(HCI_QUIRK_NON_PERSISTENT_SETUP, &hdev->quirks);
-+
-+	hdev->dev_type = HCI_PRIMARY;
 +
 +	ret = hci_register_dev(hdev);
 +	if (ret < 0) {
