@@ -1,20 +1,26 @@
-From 811ac3d2c23113ee71fa0eb962fdbb817c88f65d Mon Sep 17 00:00:00 2001
+From 5eb973e8f1b601f9521485d8ab60bc8d31b8b463 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
 Date: Mon, 10 Mar 2025 12:22:42 -0500
-Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.0.9 SDK driver
+Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.2.10 SDK driver to
+ linux-6.6.y
 
 ---
  arch/arm64/configs/defconfig          |    7 +-
  drivers/bluetooth/Kconfig.orig        |  482 --
  drivers/bluetooth/Makefile.orig       |   53 -
+ drivers/bluetooth/btti_main.c         |    1 -
  drivers/net/wireless/ti/Makefile      |    1 +
  drivers/net/wireless/ti/Makefile.orig |    5 -
  drivers/net/wireless/ti/Makefile.rej  |   10 -
+ drivers/net/wireless/ti/cc33xx/cmd.c  |    2 +-
+ drivers/net/wireless/ti/cc33xx/cmd.h  |    4 +-
+ drivers/net/wireless/ti/cc33xx/init.c |    2 +-
  drivers/net/wireless/ti/cc33xx/main.c |    2 +
+ drivers/net/wireless/ti/cc33xx/scan.c |    4 -
  net/mac80211/mlme.c.orig              | 7961 -------------------------
  net/mac80211/util.c.orig              | 5168 ----------------
  net/mac80211/wpa.c.orig               | 1118 ----
- 10 files changed, 8 insertions(+), 14799 deletions(-)
+ 15 files changed, 12 insertions(+), 14808 deletions(-)
  delete mode 100644 drivers/bluetooth/Kconfig.orig
  delete mode 100644 drivers/bluetooth/Makefile.orig
  delete mode 100644 drivers/net/wireless/ti/Makefile.orig
@@ -592,6 +598,18 @@ index 7a5967e9ac48..000000000000
 -hci_uart-$(CONFIG_BT_HCIUART_AG6XX)	+= hci_ag6xx.o
 -hci_uart-$(CONFIG_BT_HCIUART_MRVL)	+= hci_mrvl.o
 -hci_uart-objs				:= $(hci_uart-y)
+diff --git a/drivers/bluetooth/btti_main.c b/drivers/bluetooth/btti_main.c
+index 6857d8b90df0..485936554513 100644
+--- a/drivers/bluetooth/btti_main.c
++++ b/drivers/bluetooth/btti_main.c
+@@ -369,7 +369,6 @@ int btti_hci_register_hdev(struct btti_private *private_data)
+ 
+ 	set_bit(HCI_QUIRK_NON_PERSISTENT_SETUP, &hdev->quirks);
+ 
+-	hdev->dev_type = HCI_PRIMARY;
+ 
+ 	ret = hci_register_dev(hdev);
+ 	if (ret < 0) {
 diff --git a/drivers/net/wireless/ti/Makefile b/drivers/net/wireless/ti/Makefile
 index 05ee016594f8..4356f58b4b98 100644
 --- a/drivers/net/wireless/ti/Makefile
@@ -628,11 +646,57 @@ index 7ea384992ee8..000000000000
 - 
 - # small builtin driver bit
 - obj-$(CONFIG_WILINK_PLATFORM_DATA)	+= wilink_platform_data.o
+diff --git a/drivers/net/wireless/ti/cc33xx/cmd.c b/drivers/net/wireless/ti/cc33xx/cmd.c
+index 91fe0513398d..64d952bc6ea3 100644
+--- a/drivers/net/wireless/ti/cc33xx/cmd.c
++++ b/drivers/net/wireless/ti/cc33xx/cmd.c
+@@ -2141,7 +2141,7 @@ int cmd_download_container_chunk(struct cc33xx *wl, u8 *chunk,
+ 				 size_t chunk_len, bool is_last_chunk)
+ {
+ 	struct cc33xx_cmd_container_download *cmd;
+-	const size_t command_size = sizeof(*cmd) + chunk_len;
++	const size_t command_size = sizeof(struct cc33xx_cmd_container_download) + chunk_len;
+ 	int ret;
+ 	bool  is_sync_transfer = !is_last_chunk;
+ 
+diff --git a/drivers/net/wireless/ti/cc33xx/cmd.h b/drivers/net/wireless/ti/cc33xx/cmd.h
+index 283f31b2b4c5..3f6a1aeadc9d 100644
+--- a/drivers/net/wireless/ti/cc33xx/cmd.h
++++ b/drivers/net/wireless/ti/cc33xx/cmd.h
+@@ -740,13 +740,13 @@ struct cc33xx_cmd_ini_params_download
+ {
+ 	struct cc33xx_cmd_header header;
+ 	__le32 length;
+-	u8 payload[0];
++	u8 payload[];
+ }__packed;
+ 
+ struct cc33xx_cmd_container_download {
+ 	struct cc33xx_cmd_header header;
+ 	__le32 length;
+-	u8 payload[0];
++	u8 payload[];
+ } __packed;
+ 
+ struct cc33xx_cmd_get_device_info {
+diff --git a/drivers/net/wireless/ti/cc33xx/init.c b/drivers/net/wireless/ti/cc33xx/init.c
+index fb1615c1d241..e40aeb6c1e53 100644
+--- a/drivers/net/wireless/ti/cc33xx/init.c
++++ b/drivers/net/wireless/ti/cc33xx/init.c
+@@ -344,7 +344,7 @@ int cc33xx_hw_init(struct cc33xx *wl)
+ int cc33xx_download_ini_params_and_wait(struct cc33xx *wl)
+ {
+ 	struct cc33xx_cmd_ini_params_download *cmd;
+-	size_t command_size = ALIGN((sizeof(*cmd) + sizeof(wl->conf)),4);
++	size_t command_size = ALIGN((sizeof(struct cc33xx_cmd_ini_params_download) + sizeof(wl->conf)),4);
+ 	int ret;
+ 
+ 	if (wl->conf.core.enable_FlowCtrl == 0)
 diff --git a/drivers/net/wireless/ti/cc33xx/main.c b/drivers/net/wireless/ti/cc33xx/main.c
-index 8fc6a472f0d6..7ac7684d7bc1 100644
+index f6ed3561ccf5..8c17e447b436 100644
 --- a/drivers/net/wireless/ti/cc33xx/main.c
 +++ b/drivers/net/wireless/ti/cc33xx/main.c
-@@ -5226,6 +5226,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+@@ -5243,6 +5243,7 @@ static const struct ieee80211_ops cc33xx_ops = {
  	.prepare_multicast = cc33xx_op_prepare_multicast,
  	.configure_filter = cc33xx_op_configure_filter,
  	.tx = cc33xx_op_tx,
@@ -640,7 +704,7 @@ index 8fc6a472f0d6..7ac7684d7bc1 100644
  	.set_key = cc33xx_op_set_key,
  	.hw_scan = cc33xx_op_hw_scan,
  	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
-@@ -5302,6 +5303,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+@@ -5319,6 +5320,7 @@ static const struct ieee80211_ops cc33xx_ops = {
  	.prepare_multicast = cc33xx_op_prepare_multicast,
  	.configure_filter = cc33xx_op_configure_filter,
  	.tx = cc33xx_op_tx,
@@ -648,6 +712,21 @@ index 8fc6a472f0d6..7ac7684d7bc1 100644
  	.set_key = cc33xx_op_set_key,
  	.hw_scan = cc33xx_op_hw_scan,
  	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
+diff --git a/drivers/net/wireless/ti/cc33xx/scan.c b/drivers/net/wireless/ti/cc33xx/scan.c
+index 750a776fbb94..3c35ee64b4ce 100644
+--- a/drivers/net/wireless/ti/cc33xx/scan.c
++++ b/drivers/net/wireless/ti/cc33xx/scan.c
+@@ -339,10 +339,6 @@ static bool wlcore_set_scan_chan_params(struct cc33xx *wl,
+ 						  MAX_CHANNELS_5GHZ,
+ 						  &n_pactive_ch, scan_type);
+ 
+-	/* 802.11j channels are not supported yet */
+-	cfg->passive[2] = 0;
+-	cfg->active[2] = 0;
+-
+ 	cfg->passive_active = n_pactive_ch;
+ 
+ 	cc33xx_debug(DEBUG_SCAN, "2.4GHz: active %d passive %d",
 diff --git a/net/mac80211/mlme.c.orig b/net/mac80211/mlme.c.orig
 deleted file mode 100644
 index 2c7e139efd53..000000000000
