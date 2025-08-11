@@ -1,10 +1,11 @@
-From b5427376ce12089ba0ca7b49e554040470d8e24b Mon Sep 17 00:00:00 2001
+From f6ebf2a64a3787fae8882afe24c2ab8bcc642d7d Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
 Date: Tue, 5 Aug 2025 16:02:01 -0500
 Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.2.10 SDK to 6.12.y
 
 ---
  arch/arm64/configs/defconfig             |   7 +-
+ drivers/bluetooth/btti_main.c            |   2 -
  drivers/bluetooth/btti_uart.c            |   3 +-
  drivers/net/wireless/ti/Makefile         |   1 +
  drivers/net/wireless/ti/cc33xx/boot.c    |   5 +-
@@ -17,10 +18,11 @@ Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.2.10 SDK to 6.12.y
  drivers/net/wireless/ti/cc33xx/main.c    |  35 +++---
  drivers/net/wireless/ti/cc33xx/scan.c    |   8 +-
  drivers/net/wireless/ti/cc33xx/scan.h    |   5 +-
+ drivers/net/wireless/ti/cc33xx/sysfs.c   |  55 ++++++++++
  net/mac80211/mlme.c                      |  23 ----
  net/mac80211/util.c                      |   1 +
  net/mac80211/wpa.c                       |  32 +++---
- 16 files changed, 59 insertions(+), 216 deletions(-)
+ 18 files changed, 114 insertions(+), 218 deletions(-)
 
 diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
 index f988dd79add8..d336dfce9a3d 100644
@@ -44,6 +46,19 @@ index f988dd79add8..d336dfce9a3d 100644
 +CONFIG_CC33XX=m
 +CONFIG_CC33XX_SDIO=m
 +CONFIG_BT_TI_UART=m
+diff --git a/drivers/bluetooth/btti_main.c b/drivers/bluetooth/btti_main.c
+index 6857d8b90df0..7a96ea724a0e 100644
+--- a/drivers/bluetooth/btti_main.c
++++ b/drivers/bluetooth/btti_main.c
+@@ -369,8 +369,6 @@ int btti_hci_register_hdev(struct btti_private *private_data)
+ 
+ 	set_bit(HCI_QUIRK_NON_PERSISTENT_SETUP, &hdev->quirks);
+ 
+-	hdev->dev_type = HCI_PRIMARY;
+-
+ 	ret = hci_register_dev(hdev);
+ 	if (ret < 0) {
+ 		BT_ERR("[bt sdio hci] Can not register HCI device");
 diff --git a/drivers/bluetooth/btti_uart.c b/drivers/bluetooth/btti_uart.c
 index 62e52ac5fad9..4ac8ded57b5b 100644
 --- a/drivers/bluetooth/btti_uart.c
@@ -593,6 +608,87 @@ index dbda7a66abc4..d7310613dd5a 100644
  	u8 dfs;		   /* number of dfs channels in 5ghz */
  	u8 passive_active; /* number of passive before active channels 2.4ghz */
  
+diff --git a/drivers/net/wireless/ti/cc33xx/sysfs.c b/drivers/net/wireless/ti/cc33xx/sysfs.c
+index 2c8cf0829c25..eb45ed2594b3 100644
+--- a/drivers/net/wireless/ti/cc33xx/sysfs.c
++++ b/drivers/net/wireless/ti/cc33xx/sysfs.c
+@@ -5,9 +5,58 @@
+  * Copyright (C) 2013 Texas Instruments Inc.
+  */
+ 
++#include <linux/device.h>
+ #include "acx.h"
+ #include "sysfs.h"
+ 
++static ssize_t ble_enable_show(struct device *dev,
++				  struct device_attribute *attr,
++				  char *buf)
++{
++	struct cc33xx *cc = dev_get_drvdata(dev);
++	ssize_t len;
++
++	mutex_lock(&cc->mutex);
++	len = sysfs_emit(buf, "%d\n", cc->ble_enable);
++	mutex_unlock(&cc->mutex);
++
++	return len;
++}
++
++static ssize_t ble_enable_store(struct device *dev,
++				   struct device_attribute *attr,
++				   const char *buf, size_t count)
++{
++	struct cc33xx *cc = dev_get_drvdata(dev);
++	int ret;
++	unsigned long value;
++
++	ret = kstrtoul(buf, 10, &value);
++	if (value != 1) {
++		cc33xx_warning("illegal value in ble_enable (only value allowed is is 1)");
++		cc33xx_warning("ble_enable cant be disabled after being enabled.");
++		return -EINVAL;
++	}
++
++	if (value == cc->ble_enable) {
++		cc33xx_warning("ble_enable is already %d",cc->ble_enable);
++		return -EINVAL;
++	}
++
++	mutex_lock(&cc->mutex);
++
++	if (unlikely(cc->state != WLCORE_STATE_ON)) {
++		/* this will show up on "read" in case we are off */
++		cc->ble_enable = value;
++		goto out;
++	}
++
++	cc33xx_ble_enable(cc, value);
++out:
++	mutex_unlock(&cc->mutex);
++	return count;
++}
++static DEVICE_ATTR_RW(ble_enable);
+ 
+ static ssize_t cc33xx_sysfs_read_fwlog(struct file *filp, struct kobject *kobj,
+ 				       struct bin_attribute *bin_attr,
+@@ -50,6 +99,11 @@ int wlcore_sysfs_init(struct cc33xx *wl)
+ {
+ 	int ret;
+ 
++	ret = device_create_file(wl->dev, &dev_attr_ble_enable);
++	if (ret < 0) {
++		cc33xx_error("failed to create sysfs file bt_coex_state");
++	}
++
+ 	/* Create sysfs file for the FW log */
+ 	ret = device_create_bin_file(wl->dev, &fwlog_attr);
+ 	if (ret < 0) {
+@@ -62,4 +116,5 @@ int wlcore_sysfs_init(struct cc33xx *wl)
+ void wlcore_sysfs_free(struct cc33xx *wl)
+ {
+ 	device_remove_bin_file(wl->dev, &fwlog_attr);
++	device_remove_file(wl->dev, &dev_attr_ble_enable);
+ }
 diff --git a/net/mac80211/mlme.c b/net/mac80211/mlme.c
 index 347cf4c1d32f..fd7434995a47 100644
 --- a/net/mac80211/mlme.c
