@@ -21,7 +21,7 @@ version:
 | Kernel | CC33xx SDK |
 | ------------- | ------------- |
 | 4.4.y | [1.0.0.6](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.6) |
-| 4.14.y | [1.0.0.6](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.6) |
+| 4.14.y | [1.0.2.10](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.10) |
 | 5.4.y | [1.0.2.10](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.10) |
 | 5.10.y | [1.0.0.9](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.9) |
 | 5.15.y | [1.0.0.8](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.0.8) |
