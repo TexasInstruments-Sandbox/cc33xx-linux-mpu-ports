@@ -1,34 +1,37 @@
-From f6ebf2a64a3787fae8882afe24c2ab8bcc642d7d Mon Sep 17 00:00:00 2001
+From 0b398a9354c7684e1c034ba7c4cd5f041c836d67 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
-Date: Tue, 5 Aug 2025 16:02:01 -0500
+Date: Thu, 6 Nov 2025 11:54:37 -0600
 Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.2.10 SDK to 6.12.y
 
 ---
- arch/arm64/configs/defconfig             |   7 +-
+ arch/arm64/configs/defconfig             |   4 +-
  drivers/bluetooth/btti_main.c            |   2 -
  drivers/bluetooth/btti_uart.c            |   3 +-
  drivers/net/wireless/ti/Makefile         |   1 +
  drivers/net/wireless/ti/cc33xx/boot.c    |   5 +-
  drivers/net/wireless/ti/cc33xx/cmd.c     |   8 +-
  drivers/net/wireless/ti/cc33xx/cmd.h     |   4 +-
- drivers/net/wireless/ti/cc33xx/debugfs.c |   4 +-
+ drivers/net/wireless/ti/cc33xx/debugfs.c |  10 +-
  drivers/net/wireless/ti/cc33xx/event.c   |   4 +-
  drivers/net/wireless/ti/cc33xx/init.c    | 134 +----------------------
  drivers/net/wireless/ti/cc33xx/init.h    |   1 -
  drivers/net/wireless/ti/cc33xx/main.c    |  35 +++---
  drivers/net/wireless/ti/cc33xx/scan.c    |   8 +-
  drivers/net/wireless/ti/cc33xx/scan.h    |   5 +-
+ drivers/net/wireless/ti/cc33xx/spi.c     |   4 +-
  drivers/net/wireless/ti/cc33xx/sysfs.c   |  55 ++++++++++
+ drivers/net/wireless/ti/cc33xx/tx.c      |   6 +-
+ drivers/net/wireless/ti/cc33xx/tx.h      |   2 +-
  net/mac80211/mlme.c                      |  23 ----
  net/mac80211/util.c                      |   1 +
  net/mac80211/wpa.c                       |  32 +++---
- 18 files changed, 114 insertions(+), 218 deletions(-)
+ 21 files changed, 120 insertions(+), 227 deletions(-)
 
 diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
-index f988dd79add8..d336dfce9a3d 100644
+index a9bda5f7b4b7..4444d30065a7 100644
 --- a/arch/arm64/configs/defconfig
 +++ b/arch/arm64/configs/defconfig
-@@ -430,8 +430,8 @@ CONFIG_MWIFIEX_SDIO=m
+@@ -464,8 +464,8 @@ CONFIG_MWIFIEX_SDIO=m
  CONFIG_MWIFIEX_PCIE=m
  CONFIG_MT7921E=m
  CONFIG_RSI_91X=m
@@ -39,13 +42,6 @@ index f988dd79add8..d336dfce9a3d 100644
  CONFIG_WWAN=m
  CONFIG_MHI_WWAN_CTRL=m
  CONFIG_MHI_WWAN_MBIM=m
-@@ -1726,3 +1726,6 @@ CONFIG_CORESIGHT_STM=m
- CONFIG_CORESIGHT_CPU_DEBUG=m
- CONFIG_CORESIGHT_CTI=m
- CONFIG_MEMTEST=y
-+CONFIG_CC33XX=m
-+CONFIG_CC33XX_SDIO=m
-+CONFIG_BT_TI_UART=m
 diff --git a/drivers/bluetooth/btti_main.c b/drivers/bluetooth/btti_main.c
 index 6857d8b90df0..7a96ea724a0e 100644
 --- a/drivers/bluetooth/btti_main.c
@@ -173,7 +169,7 @@ index 283f31b2b4c5..3f6a1aeadc9d 100644
  
  struct cc33xx_cmd_get_device_info {
 diff --git a/drivers/net/wireless/ti/cc33xx/debugfs.c b/drivers/net/wireless/ti/cc33xx/debugfs.c
-index 71d760492079..a250e91532ec 100644
+index 71d760492079..c8c220d2f975 100644
 --- a/drivers/net/wireless/ti/cc33xx/debugfs.c
 +++ b/drivers/net/wireless/ti/cc33xx/debugfs.c
 @@ -38,7 +38,7 @@ struct cc33xx_cmd_dfs_radar_debug {
@@ -185,6 +181,21 @@ index 71d760492079..a250e91532ec 100644
  {
  	struct cc33xx_cmd_dfs_radar_debug *cmd;
  	int ret = 0;
+@@ -251,12 +251,12 @@ static const struct file_operations radar_debug_mode_ops = {
+ 	.llseek = default_llseek,
+ };
+ 
+-static void cc33xx_debugfs_add_files_helper(struct dentry *moddir)
++static void cc33xx_debugfs_add_files_helper(struct cc33xx *wl, struct dentry *moddir)
+ {
+ 	DEBUGFS_ADD(radar_debug_mode, moddir);
+ }
+ #else
+-static void cc33xx_debugfs_add_files_helper(struct dentry *moddir) {}
++static void cc33xx_debugfs_add_files_helper(struct cc33xx *wl, struct dentry *moddir) {}
+ #endif /* CFG80211_CERTIFICATION_ONUS */
+ 
+ 
 @@ -1949,7 +1949,7 @@ static const struct file_operations antenna_diversity_select_default_antenna_ops
  	.llseek = default_llseek,
  };
@@ -194,6 +205,15 @@ index 71d760492079..a250e91532ec 100644
  			     struct dentry *rootdir)
  {
  	struct dentry *stats, *moddir;
+@@ -1998,7 +1998,7 @@ int cc33xx_debugfs_add_files(struct cc33xx *wl,
+ 
+ 	DEBUGFS_ADD(conf, moddir);
+ 	DEBUGFS_ADD(radar_detection, moddir);
+-	cc33xx_debugfs_add_files_helper(moddir);
++	cc33xx_debugfs_add_files_helper(wl, moddir);
+ 	DEBUGFS_ADD(dynamic_fw_traces, moddir);
+ 
+ 	return 0;
 diff --git a/drivers/net/wireless/ti/cc33xx/event.c b/drivers/net/wireless/ti/cc33xx/event.c
 index 5275348eb617..2f338de382e0 100644
 --- a/drivers/net/wireless/ti/cc33xx/event.c
@@ -608,6 +628,28 @@ index dbda7a66abc4..d7310613dd5a 100644
  	u8 dfs;		   /* number of dfs channels in 5ghz */
  	u8 passive_active; /* number of passive before active channels 2.4ghz */
  
+diff --git a/drivers/net/wireless/ti/cc33xx/spi.c b/drivers/net/wireless/ti/cc33xx/spi.c
+index 691970355df7..9e46feeeaad7 100644
+--- a/drivers/net/wireless/ti/cc33xx/spi.c
++++ b/drivers/net/wireless/ti/cc33xx/spi.c
+@@ -74,7 +74,7 @@ static void __cc33xx_spi_lock(struct cc33xx_spi_glue *glue)
+ {
+ 	if (glue->locking_pid != current->pid)
+ 	{
+-		spi_bus_lock(to_spi_device(glue->dev)->master);
++		spi_bus_lock(to_spi_device(glue->dev)->controller);
+ 		glue->locking_pid = current->pid;
+ 		glue->lock_count = 1;
+ 	} else {
+@@ -90,7 +90,7 @@ static void __cc33xx_spi_unlock(struct cc33xx_spi_glue *glue)
+ 	glue->lock_count--;
+ 	if (!glue->lock_count){
+ 		glue->locking_pid = 0;
+-		spi_bus_unlock(to_spi_device(glue->dev)->master);
++		spi_bus_unlock(to_spi_device(glue->dev)->controller);
+ 	}
+ }
+ 
 diff --git a/drivers/net/wireless/ti/cc33xx/sysfs.c b/drivers/net/wireless/ti/cc33xx/sysfs.c
 index 2c8cf0829c25..eb45ed2594b3 100644
 --- a/drivers/net/wireless/ti/cc33xx/sysfs.c
@@ -689,8 +731,52 @@ index 2c8cf0829c25..eb45ed2594b3 100644
  	device_remove_bin_file(wl->dev, &fwlog_attr);
 +	device_remove_file(wl->dev, &dev_attr_ble_enable);
  }
+diff --git a/drivers/net/wireless/ti/cc33xx/tx.c b/drivers/net/wireless/ti/cc33xx/tx.c
+index 8d7a811226de..efdaf0398e56 100644
+--- a/drivers/net/wireless/ti/cc33xx/tx.c
++++ b/drivers/net/wireless/ti/cc33xx/tx.c
+@@ -165,7 +165,7 @@ u8 cc33xx_tx_get_hlid(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 	return wlvif->sta.hlid;
+ }
+ 
+-unsigned int wlcore_calc_packet_alignment(struct cc33xx *wl,
++unsigned int cc33xx_calc_packet_alignment(struct cc33xx *wl,
+ 					  unsigned int packet_length)
+ {
+ 	if ((wl->quirks & WLCORE_QUIRK_TX_PAD_LAST_FRAME) ||
+@@ -174,7 +174,7 @@ unsigned int wlcore_calc_packet_alignment(struct cc33xx *wl,
+ 	else
+ 		return ALIGN(packet_length, CC33XX_BUS_BLOCK_SIZE);
+ }
+-EXPORT_SYMBOL(wlcore_calc_packet_alignment);
++EXPORT_SYMBOL(cc33xx_calc_packet_alignment);
+ 
+ static u32 cc33xx_calc_tx_blocks(struct cc33xx *wl, u32 len, u32 spare_blks)
+ {
+@@ -530,7 +530,7 @@ static int cc33xx_prepare_tx_frame(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 	 * In special cases, we want to align to a specific block size
+ 	 * (eg. for wl128x with SDIO we align to 256).
+ 	 */
+-	total_len = wlcore_calc_packet_alignment(wl, skb->len);
++	total_len = cc33xx_calc_packet_alignment(wl, skb->len);
+ 	cc33xx_debug(DEBUG_TX, "wlcore_calc_packet_alignment ");
+ 
+ 	memcpy(wl->aggr_buf + buf_offset,
+diff --git a/drivers/net/wireless/ti/cc33xx/tx.h b/drivers/net/wireless/ti/cc33xx/tx.h
+index bda24925daf8..8b3c51a1c7b3 100644
+--- a/drivers/net/wireless/ti/cc33xx/tx.h
++++ b/drivers/net/wireless/ti/cc33xx/tx.h
+@@ -143,7 +143,7 @@ u8 cc33xx_tx_get_hlid(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ void cc33xx_tx_reset_link_queues(struct cc33xx *wl, u8 hlid);
+ void cc33xx_handle_tx_low_watermark(struct cc33xx *wl);
+ bool cc33xx_is_dummy_packet(struct cc33xx *wl, struct sk_buff *skb);
+-unsigned int wlcore_calc_packet_alignment(struct cc33xx *wl,
++unsigned int cc33xx_calc_packet_alignment(struct cc33xx *wl,
+ 					  unsigned int packet_length);
+ void cc33xx_free_tx_id(struct cc33xx *wl, int id);
+ void wlcore_stop_queue_locked(struct cc33xx *wl, struct cc33xx_vif *wlvif,
 diff --git a/net/mac80211/mlme.c b/net/mac80211/mlme.c
-index 347cf4c1d32f..fd7434995a47 100644
+index c3d67496e5d1..16bb3db67eaa 100644
 --- a/net/mac80211/mlme.c
 +++ b/net/mac80211/mlme.c
 @@ -1447,9 +1447,6 @@ static size_t ieee80211_assoc_link_elems(struct ieee80211_sub_if_data *sdata,
@@ -738,7 +824,7 @@ index 347cf4c1d32f..fd7434995a47 100644
  			sizeof(struct ieee80211_he_mcs_nss_supp) +
  			IEEE80211_HE_PPE_THRES_MAX_LEN;
 diff --git a/net/mac80211/util.c b/net/mac80211/util.c
-index 5c6bd47461c8..77638e965726 100644
+index e9856fcb7b8b..a98ae563613c 100644
 --- a/net/mac80211/util.c
 +++ b/net/mac80211/util.c
 @@ -1202,6 +1202,7 @@ static int ieee80211_put_preq_ies_band(struct sk_buff *skb,
