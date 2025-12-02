@@ -1,0 +1,1083 @@
+From d1b67c30ae32d5c0adf56ab66dfb263a69c2f9d8 Mon Sep 17 00:00:00 2001
+From: Sabeeh Khan <sabeeh-khan@ti.com>
+Date: Tue, 2 Dec 2025 11:46:50 -0600
+Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.2.10 SDK to 6.18.y
+
+---
+ arch/arm64/configs/defconfig             |   9 +-
+ drivers/bluetooth/btti_debugfs.c         |   2 +-
+ drivers/bluetooth/btti_main.c            |   4 +-
+ drivers/bluetooth/btti_uart.c            |  21 ++--
+ drivers/net/wireless/ti/Makefile         |   1 +
+ drivers/net/wireless/ti/cc33xx/boot.c    |   5 +-
+ drivers/net/wireless/ti/cc33xx/cmd.c     |   8 +-
+ drivers/net/wireless/ti/cc33xx/cmd.h     |   4 +-
+ drivers/net/wireless/ti/cc33xx/debugfs.c |  10 +-
+ drivers/net/wireless/ti/cc33xx/event.c   |   4 +-
+ drivers/net/wireless/ti/cc33xx/init.c    | 134 +----------------------
+ drivers/net/wireless/ti/cc33xx/init.h    |   1 -
+ drivers/net/wireless/ti/cc33xx/main.c    |  56 +++++-----
+ drivers/net/wireless/ti/cc33xx/scan.c    |   8 +-
+ drivers/net/wireless/ti/cc33xx/scan.h    |   5 +-
+ drivers/net/wireless/ti/cc33xx/sdio.c    |   1 +
+ drivers/net/wireless/ti/cc33xx/spi.c     |   5 +-
+ drivers/net/wireless/ti/cc33xx/sysfs.c   |  57 +++++++++-
+ drivers/net/wireless/ti/cc33xx/tx.c      |   6 +-
+ drivers/net/wireless/ti/cc33xx/tx.h      |   2 +-
+ net/mac80211/mlme.c                      |  22 ----
+ net/mac80211/wpa.c                       |  32 +++---
+ 22 files changed, 149 insertions(+), 248 deletions(-)
+
+diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
+index 1a48faad2473..3844dd83d23c 100644
+--- a/arch/arm64/configs/defconfig
++++ b/arch/arm64/configs/defconfig
+@@ -445,8 +445,8 @@ CONFIG_MWIFIEX_PCIE=m
+ CONFIG_MWIFIEX_USB=m
+ CONFIG_MT7921E=m
+ CONFIG_RSI_91X=m
+-CONFIG_WL18XX=m
+-CONFIG_WLCORE_SDIO=m
++CONFIG_WL18XX=n
++CONFIG_WLCORE_SDIO=n
+ CONFIG_WWAN=m
+ CONFIG_MHI_WWAN_CTRL=m
+ CONFIG_MHI_WWAN_MBIM=m
+@@ -1823,3 +1823,8 @@ CONFIG_CORESIGHT_STM=m
+ CONFIG_CORESIGHT_CPU_DEBUG=m
+ CONFIG_CORESIGHT_CTI=m
+ CONFIG_MEMTEST=y
++CONFIG_CC33XX=m
++CONFIG_CC33XX_SDIO=m
++CONFIG_CC33XX_SPI=m
++CONFIG_BT_TI=m
++CONFIG_BT_TI_SDIO=m
+diff --git a/drivers/bluetooth/btti_debugfs.c b/drivers/bluetooth/btti_debugfs.c
+index 4ccc324e5ded..55c4c1e87763 100644
+--- a/drivers/bluetooth/btti_debugfs.c
++++ b/drivers/bluetooth/btti_debugfs.c
+@@ -33,7 +33,7 @@ int btti_debugfs_if_prepare_command(u8 cmd_type,\
+ 
+ #define DEBUGFS_FORMAT_BUFFER_SIZE 256
+ 
+-int btti_format_buffer(char __user *userbuf, size_t count,
++static int btti_format_buffer(char __user *userbuf, size_t count,
+ 			 loff_t *ppos, char *fmt, ...)
+ {
+ 	va_list args;
+diff --git a/drivers/bluetooth/btti_main.c b/drivers/bluetooth/btti_main.c
+index 6857d8b90df0..79d2da2c55e5 100644
+--- a/drivers/bluetooth/btti_main.c
++++ b/drivers/bluetooth/btti_main.c
+@@ -367,9 +367,7 @@ int btti_hci_register_hdev(struct btti_private *private_data)
+ 	hdev->setup = btti_hci_if_setup;
+ 	SET_HCIDEV_DEV(hdev, &sdiodev->func->dev);
+ 
+-	set_bit(HCI_QUIRK_NON_PERSISTENT_SETUP, &hdev->quirks);
+-
+-	hdev->dev_type = HCI_PRIMARY;
++	hci_set_quirk(hdev, HCI_QUIRK_NON_PERSISTENT_SETUP);
+ 
+ 	ret = hci_register_dev(hdev);
+ 	if (ret < 0) {
+diff --git a/drivers/bluetooth/btti_uart.c b/drivers/bluetooth/btti_uart.c
+index 62e52ac5fad9..0b698e10222e 100644
+--- a/drivers/bluetooth/btti_uart.c
++++ b/drivers/bluetooth/btti_uart.c
+@@ -19,12 +19,11 @@
+ #include <linux/pm_runtime.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/pinctrl/consumer.h>
+-#include <asm/unaligned.h>
+ 
+ #include <net/bluetooth/bluetooth.h>
+ #include <net/bluetooth/hci_core.h>
+ 
+-#include "h4_recv.h"
++#include "hci_uart.h"
+ 
+ #define VERSION "0.84"
+ 
+@@ -87,7 +86,7 @@ static const char *event_to_string(enum sm_event event)
+ };
+ 
+ struct btti_uart_dev {
+-	struct hci_dev *hdev;
++	struct hci_uart *huart;
+ 	struct serdev_device *serdev;
+ 	struct regulator *reg;
+ 	struct notifier_block nb;
+@@ -228,18 +227,18 @@ static int btti_uart_register_hci_device(struct btti_uart_dev *bdev)
+ 		hdev = NULL;
+ 	}
+ 
+-	bdev->hdev = hdev;
++	bdev->huart->hdev = hdev;
+ 	return ret;
+ }
+ 
+ static void btti_uart_unregister_device(struct btti_uart_dev *bdev)
+ {
+-	struct hci_dev *hdev = bdev->hdev;
++	struct hci_dev *hdev = bdev->huart->hdev;
+ 
+ 	hci_unregister_dev(hdev);
+ 	hci_free_dev(hdev);
+ 	
+-	bdev->hdev = NULL;
++	bdev->huart->hdev = NULL;
+ }
+ 
+ static void btti_uart_tx_work(struct work_struct *work)
+@@ -247,7 +246,7 @@ static void btti_uart_tx_work(struct work_struct *work)
+ 	struct btti_uart_dev *bdev = container_of(work, struct btti_uart_dev,
+ 					          tx_work);
+ 	struct serdev_device *serdev = bdev->serdev;
+-	struct hci_dev *hdev = bdev->hdev;
++	struct hci_dev *hdev = bdev->huart->hdev;
+ 
+ 	while (1) {
+ 		struct sk_buff *skb = skb_dequeue(&bdev->txq);
+@@ -459,18 +458,18 @@ static int btti_uart_wakeup_event_match(struct serdev_device *serdev,
+ 	return count;
+ }
+ 
+-static int btti_uart_receive_buf(struct serdev_device *serdev, const u8 *data,
++static size_t btti_uart_receive_buf(struct serdev_device *serdev, const u8 *data,
+ 			      size_t count)
+ {
+ 	struct btti_uart_dev *bdev = serdev_device_get_drvdata(serdev);
+ 	const struct btti_uart_vnd *vnd = bdev->vnd;
+ 
+-	if (unlikely(!bdev->hdev)){
++	if (unlikely(!bdev->huart->hdev)){
+ 		// Accept only wakeup event until driver is registered with HCI 
+ 		return btti_uart_wakeup_event_match(serdev, data, count);
+ 	}
+ 
+-	bdev->rx_skb = h4_recv_buf(bdev->hdev, bdev->rx_skb, data, count,
++	bdev->rx_skb = h4_recv_buf(bdev->huart, bdev->rx_skb, data, count,
+ 				   vnd->recv_pkts, vnd->recv_pkts_cnt);
+ 	if (IS_ERR(bdev->rx_skb)) {
+ 		int err = PTR_ERR(bdev->rx_skb);
+@@ -481,7 +480,7 @@ static int btti_uart_receive_buf(struct serdev_device *serdev, const u8 *data,
+ 		return 0;
+ 	}
+ 
+-	bdev->hdev->stat.byte_rx += count;
++	bdev->huart->hdev->stat.byte_rx += count;
+ 
+ 	return count;
+ }
+diff --git a/drivers/net/wireless/ti/Makefile b/drivers/net/wireless/ti/Makefile
+index 05ee016594f8..4356f58b4b98 100644
+--- a/drivers/net/wireless/ti/Makefile
++++ b/drivers/net/wireless/ti/Makefile
+@@ -3,3 +3,4 @@ obj-$(CONFIG_WLCORE)			+= wlcore/
+ obj-$(CONFIG_WL12XX)			+= wl12xx/
+ obj-$(CONFIG_WL1251)			+= wl1251/
+ obj-$(CONFIG_WL18XX)			+= wl18xx/
++obj-$(CONFIG_CC33XX)			+= cc33xx/
+diff --git a/drivers/net/wireless/ti/cc33xx/boot.c b/drivers/net/wireless/ti/cc33xx/boot.c
+index 26ceda41006d..cd78a429066e 100644
+--- a/drivers/net/wireless/ti/cc33xx/boot.c
++++ b/drivers/net/wireless/ti/cc33xx/boot.c
+@@ -8,6 +8,7 @@
+  */
+ 
+ #include <linux/firmware.h>
++#include <linux/vmalloc.h>
+ 
+ #include "boot.h"
+ #include "cmd.h"
+@@ -400,10 +401,6 @@ int cc33xx_init_fw(struct cc33xx *wl)
+ 	if (ret < 0)
+ 		goto disable_irq;
+ 	
+-	/* Get static calibration data and send it to FW*/
+-	ret = download_static_calibration_data(wl);
+-	if (ret < 0)
+-		return ret;
+ 
+ 	ret = cc33xx_hw_init(wl);
+ 	if (ret < 0)
+diff --git a/drivers/net/wireless/ti/cc33xx/cmd.c b/drivers/net/wireless/ti/cc33xx/cmd.c
+index 91fe0513398d..6beb4c0f763a 100644
+--- a/drivers/net/wireless/ti/cc33xx/cmd.c
++++ b/drivers/net/wireless/ti/cc33xx/cmd.c
+@@ -119,7 +119,7 @@ static int __wlcore_cmd_send(struct cc33xx *wl, u16 id, void *buf,
+     case CMD_SET_PROBE_IE:
+     case CMD_DEBUG:
+ 		cc33xx_debug(DEBUG_CMD,
+-			     "Response len %d, allocated buffer len %d",
++			     "Response len %d, allocated buffer len %zd",
+ 			     wl->result_length, res_len);
+ 
+ 		if (!res_len)
+@@ -153,7 +153,7 @@ static int wlcore_cmd_send_failsafe(struct cc33xx *wl, u16 id, void *buf,
+ {
+ 	int ret = __wlcore_cmd_send(wl, id, buf, len, res_len, true);
+ 
+-	cc33xx_debug(DEBUG_TESTMODE, "CMD# %d, len=%d", id, len);
++	cc33xx_debug(DEBUG_TESTMODE, "CMD# %d, len=%zd", id, len);
+ 
+ 	if (ret < 0)
+ 		goto fail;
+@@ -494,7 +494,7 @@ static u8 wlcore_get_native_channel_type(u8 nl_channel_type)
+ 	}
+ }
+ 
+-int cc33xx_cmd_role_start_dev(struct cc33xx *wl, struct cc33xx_vif *wlvif,
++static int cc33xx_cmd_role_start_dev(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 			      enum nl80211_band band, int channel)
+ {
+ 	struct cc33xx_cmd_role_start *cmd;
+@@ -1155,7 +1155,7 @@ int cc33xx_cmd_configure(struct cc33xx *wl, u16 id, void *buf, size_t len)
+  * @valid_rets: bitmap of valid cmd status codes (i.e. return values).
+  * return the cmd status on success.
+  */
+-int wlcore_cmd_debug_failsafe(struct cc33xx *wl, u16 id, void *buf,
++static int wlcore_cmd_debug_failsafe(struct cc33xx *wl, u16 id, void *buf,
+ 				  size_t len, unsigned long valid_rets)
+ {
+ 	struct debug_header *acx = buf;
+diff --git a/drivers/net/wireless/ti/cc33xx/cmd.h b/drivers/net/wireless/ti/cc33xx/cmd.h
+index 283f31b2b4c5..3f6a1aeadc9d 100644
+--- a/drivers/net/wireless/ti/cc33xx/cmd.h
++++ b/drivers/net/wireless/ti/cc33xx/cmd.h
+@@ -740,13 +740,13 @@ struct cc33xx_cmd_ini_params_download
+ {
+ 	struct cc33xx_cmd_header header;
+ 	__le32 length;
+-	u8 payload[0];
++	u8 payload[];
+ }__packed;
+ 
+ struct cc33xx_cmd_container_download {
+ 	struct cc33xx_cmd_header header;
+ 	__le32 length;
+-	u8 payload[0];
++	u8 payload[];
+ } __packed;
+ 
+ struct cc33xx_cmd_get_device_info {
+diff --git a/drivers/net/wireless/ti/cc33xx/debugfs.c b/drivers/net/wireless/ti/cc33xx/debugfs.c
+index 71d760492079..c8c220d2f975 100644
+--- a/drivers/net/wireless/ti/cc33xx/debugfs.c
++++ b/drivers/net/wireless/ti/cc33xx/debugfs.c
+@@ -38,7 +38,7 @@ struct cc33xx_cmd_dfs_radar_debug {
+ #define MAX_VERSIONS_LEN	128
+ #define MAX_VERSIONS_EXTENDED_LEN	256
+ 
+-int cc33xx_cmd_radar_detection_debug(struct cc33xx *wl, u8 channel)
++static int cc33xx_cmd_radar_detection_debug(struct cc33xx *wl, u8 channel)
+ {
+ 	struct cc33xx_cmd_dfs_radar_debug *cmd;
+ 	int ret = 0;
+@@ -251,12 +251,12 @@ static const struct file_operations radar_debug_mode_ops = {
+ 	.llseek = default_llseek,
+ };
+ 
+-static void cc33xx_debugfs_add_files_helper(struct dentry *moddir)
++static void cc33xx_debugfs_add_files_helper(struct cc33xx *wl, struct dentry *moddir)
+ {
+ 	DEBUGFS_ADD(radar_debug_mode, moddir);
+ }
+ #else
+-static void cc33xx_debugfs_add_files_helper(struct dentry *moddir) {}
++static void cc33xx_debugfs_add_files_helper(struct cc33xx *wl, struct dentry *moddir) {}
+ #endif /* CFG80211_CERTIFICATION_ONUS */
+ 
+ 
+@@ -1949,7 +1949,7 @@ static const struct file_operations antenna_diversity_select_default_antenna_ops
+ 	.llseek = default_llseek,
+ };
+ 
+-int cc33xx_debugfs_add_files(struct cc33xx *wl,
++static int cc33xx_debugfs_add_files(struct cc33xx *wl,
+ 			     struct dentry *rootdir)
+ {
+ 	struct dentry *stats, *moddir;
+@@ -1998,7 +1998,7 @@ int cc33xx_debugfs_add_files(struct cc33xx *wl,
+ 
+ 	DEBUGFS_ADD(conf, moddir);
+ 	DEBUGFS_ADD(radar_detection, moddir);
+-	cc33xx_debugfs_add_files_helper(moddir);
++	cc33xx_debugfs_add_files_helper(wl, moddir);
+ 	DEBUGFS_ADD(dynamic_fw_traces, moddir);
+ 
+ 	return 0;
+diff --git a/drivers/net/wireless/ti/cc33xx/event.c b/drivers/net/wireless/ti/cc33xx/event.c
+index 5275348eb617..2f338de382e0 100644
+--- a/drivers/net/wireless/ti/cc33xx/event.c
++++ b/drivers/net/wireless/ti/cc33xx/event.c
+@@ -238,11 +238,11 @@ void cc33xx_event_channel_switch(struct cc33xx *wl,
+ 		vif = cc33xx_wlvif_to_vif(wlvif);
+ 
+ 		if (wlvif->bss_type == BSS_TYPE_STA_BSS) {
+-			ieee80211_chswitch_done(vif, success);
++			ieee80211_chswitch_done(vif, success, 0);
+ 			cancel_delayed_work(&wlvif->channel_switch_work);
+ 		} else {
+ 			set_bit(WLVIF_FLAG_BEACON_DISABLED, &wlvif->flags);
+-			ieee80211_csa_finish(vif);
++			ieee80211_csa_finish(vif, 0);
+ 		}
+ 	}
+ }
+diff --git a/drivers/net/wireless/ti/cc33xx/init.c b/drivers/net/wireless/ti/cc33xx/init.c
+index fb1615c1d241..de0e243572a4 100644
+--- a/drivers/net/wireless/ti/cc33xx/init.c
++++ b/drivers/net/wireless/ti/cc33xx/init.c
+@@ -75,136 +75,6 @@ static void cc33xx_set_ba_policies(struct cc33xx *wl, struct cc33xx_vif *wlvif)
+ 			     wlvif->bss_type == BSS_TYPE_STA_BSS);
+ }
+ 
+-/* Applies when MAC address is other than 0x0.
+- * Routine for actual search in file 
+- * data_ptr returned contains the pointer to entry. */
+-static bool find_calibration_entry(u8 *id, u8 **data_ptr, u8 *stop_address)
+-{
+-	u8 default_mac_address[ETH_ALEN] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+-	struct calibration_header *calibration_header;
+-	struct calibration_header_fw *calibration_header_fw;
+-	u8 *default_calibration = NULL;
+-	int compare_result = 0;
+-	bool mac_match = false;
+-	bool valid_data = false;
+-
+-	while (*data_ptr < stop_address)
+-	{
+-		/* Cast to a struct for convenient fields reading */
+-		calibration_header = (struct calibration_header *)(*data_ptr);
+-		calibration_header_fw = &(calibration_header->cal_header_fw);
+-
+-		if (le16_to_cpu(calibration_header->static_pattern) != 0x7F7F) {
+-			cc33xx_debug(DEBUG_BOOT,
+-				     "Problem with sync pattern, read: %x",
+-				     le16_to_cpu(calibration_header->static_pattern));
+-			break;
+-		}
+-
+-		/* Compare with actual mac address */
+-		compare_result = memcmp(calibration_header_fw->chip_id, id,
+-					ETH_ALEN);
+-		if (0 == compare_result) {
+-			mac_match = true;
+-			*data_ptr = (u8 *)calibration_header;
+-			break;
+-		}
+-
+-		/* Compare with default mac address, if it's found save it for
+-		 * later if necessary (if no calibration for id is found) */
+-		compare_result = memcmp(calibration_header_fw->chip_id,
+-					default_mac_address,
+-					ETH_ALEN);
+-		if (0 == compare_result)
+-			default_calibration = (u8 *)calibration_header;
+-
+-		/* advance ptr by specified payload length to next entry in file */
+-		*data_ptr = (u8 *)((u32)calibration_header
+-				+ sizeof(struct calibration_header)
+-				+ le16_to_cpu(calibration_header_fw->length));
+-	}
+-
+-	if (false == mac_match) {
+-		if (NULL != default_calibration) {
+-			cc33xx_warning("No calibration for device address, "
+-				       "using default calibration" 
+-			 	       "(labeled mac FF:FF:FF:FF:FF:FF)");
+-			/* Take default calibration */
+-			*data_ptr = default_calibration;
+-			valid_data = true;
+-		} else {
+-			cc33xx_debug(DEBUG_BOOT,"Can't find device's static" 
+-				    " calibration data in calibration file and" 
+-				    " cannot find default calibration");
+-			valid_data = false;
+-		}
+-	} else {
+-		valid_data = true;
+-		cc33xx_debug(DEBUG_BOOT, "Calibration MAC address match!");
+-	}
+-	return valid_data;
+-}
+-
+-int download_static_calibration_data(struct cc33xx *wl)
+-{
+-	int ret;
+-	const struct firmware *fw = NULL;
+-	const char *calibration_file = "ti-connectivity/static_calibration.bin";
+-	u8 *mac_address;
+-	bool valid_calibration_data = false;
+-	bool file_loaded;
+-	u8 *file_ptr = NULL;
+-	u8 *calibration_entry_ptr = NULL;
+-	struct calibration_file_header *file_header = NULL;
+-	u8 *stop_search_address;
+-
+-	if(wl->pg_version >= PG2_CHIP_VERSION)
+-	{
+-		cc33xx_debug(DEBUG_BOOT,
+-			     "Chip is PG2, No static calibration needed");
+-		return 1;
+-	}
+-		
+-	ret = request_firmware(&fw, calibration_file, wl->dev);
+-	if (ret < 0) {
+-		cc33xx_warning("Could not get firmware %s: %d,"
+-			       " proceeding with no calibration",
+-			       calibration_file, ret);
+-		valid_calibration_data = false;
+-		file_loaded = false;
+-		ret = 0; /* Don't kill driver over this */
+-		goto out;
+-	} else {
+-		file_loaded = true;
+-	}
+-	file_ptr = (u8 *)fw->data;
+-
+-    	file_header = (struct calibration_file_header *)file_ptr;
+-	cc33xx_debug(DEBUG_BOOT, "Parsing static calibration file version: %d, "
+-		     "payload struct ver: %d, entries count: %d, file size: %d",
+-		     file_header->file_version,
+-		     file_header->payload_struct_version,
+-		     le16_to_cpu(file_header->entries_count), fw->size);
+-    
+-	/* Limit the search to the file's length and skip 4 file header bytes */
+-	mac_address = (u8 *)wl->efuse_mac_address;
+-	calibration_entry_ptr = file_ptr
+-			       	+ sizeof(struct calibration_file_header);
+-	stop_search_address = file_ptr + fw->size;
+-	valid_calibration_data = find_calibration_entry(mac_address,
+-			       				&calibration_entry_ptr,
+-			       				stop_search_address);
+-
+-out:
+-	ret = cc33xx_acx_static_calibration_configure(wl, file_header,
+-						      calibration_entry_ptr,
+-						      valid_calibration_data);
+-	if (file_loaded)
+-		release_firmware(fw);
+-
+-	return ret;
+-}
+-
+ /* vif-specifc initialization */
+ static int cc33xx_init_sta_role(struct cc33xx *wl, struct cc33xx_vif *wlvif)
+ {
+@@ -344,7 +214,7 @@ int cc33xx_hw_init(struct cc33xx *wl)
+ int cc33xx_download_ini_params_and_wait(struct cc33xx *wl)
+ {
+ 	struct cc33xx_cmd_ini_params_download *cmd;
+-	size_t command_size = ALIGN((sizeof(*cmd) + sizeof(wl->conf)),4);
++	size_t command_size = ALIGN((sizeof(struct cc33xx_cmd_ini_params_download) + sizeof(wl->conf)),4);
+ 	int ret;
+ 
+ 	if (wl->conf.core.enable_FlowCtrl == 0)
+@@ -354,7 +224,7 @@ int cc33xx_download_ini_params_and_wait(struct cc33xx *wl)
+ 
+ 	cc33xx_debug(DEBUG_ACX,
+ 		     "Downloading INI Params and Configurations to FW, "
+-		     "INI Bin File Payload Length: %d", sizeof(wl->conf));
++		     "INI Bin File Payload Length: %lu", sizeof(wl->conf));
+ 	cmd = kzalloc(command_size, GFP_KERNEL);
+ 	if (!cmd) {
+ 		cc33xx_error("INI Params Download: "
+diff --git a/drivers/net/wireless/ti/cc33xx/init.h b/drivers/net/wireless/ti/cc33xx/init.h
+index 2ff113b84d42..91d5138456c8 100644
+--- a/drivers/net/wireless/ti/cc33xx/init.h
++++ b/drivers/net/wireless/ti/cc33xx/init.h
+@@ -16,7 +16,6 @@
+ int cc33xx_hw_init(struct cc33xx *wl);
+ int cc33xx_download_ini_params_and_wait(struct cc33xx *wl);
+ int cc33xx_init_vif_specific(struct cc33xx *wl, struct ieee80211_vif *vif);
+-int download_static_calibration_data(struct cc33xx *wl);
+ 
+ 
+ #endif /* __INIT_H__ */
+diff --git a/drivers/net/wireless/ti/cc33xx/main.c b/drivers/net/wireless/ti/cc33xx/main.c
+index f6ed3561ccf5..e507528f7d8b 100644
+--- a/drivers/net/wireless/ti/cc33xx/main.c
++++ b/drivers/net/wireless/ti/cc33xx/main.c
+@@ -609,9 +609,9 @@ static int cc33xx_set_authorized(struct cc33xx *wl, struct cc33xx_vif *wlvif)
+ 	return 0;
+ }
+ 
+-void wlcore_regdomain_config(struct cc33xx *wl)
++static void wlcore_regdomain_config(struct cc33xx *wl)
+ {
+-	int ret;
++	int ret = 0;
+ 
+ 	if (!(wl->quirks & WLCORE_QUIRK_REGDOMAIN_CONF))
+ 		return;
+@@ -908,7 +908,7 @@ static int parse_control_message(struct cc33xx *wl,
+ 				DUMP_PREFIX_OFFSET, 16, 1,
+ 				start_of_payload, buffer_length, false);
+ 
+-			WARN(1, "Error processing device message @ offset %x",
++			WARN(1, "Error processing device message @ offset %zx",
+ 				(size_t)(buffer-start_of_payload));
+ 
+ 			goto message_parse_error;
+@@ -1448,7 +1448,7 @@ static void cc33xx_op_tx(struct ieee80211_hw *hw,
+ 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+ 	struct ieee80211_vif *vif = info->control.vif;
+ 	struct cc33xx_vif *wlvif = NULL;
+-	enum queue_stop_reason stop_reason = WLCORE_QUEUE_STOP_REASON_WATERMARK;
++	enum wlcore_queue_stop_reason stop_reason = WLCORE_QUEUE_STOP_REASON_WATERMARK;
+ 	unsigned long flags;
+ 	int q, mapping;
+ 	u8 hlid;
+@@ -1617,12 +1617,12 @@ static int cc33xx_validate_wowlan_pattern(struct cfg80211_pkt_pattern *p)
+ 	return 0;
+ }
+ 
+-struct cc33xx_rx_filter *cc33xx_rx_filter_alloc(void)
++static struct cc33xx_rx_filter *cc33xx_rx_filter_alloc(void)
+ {
+ 	return kzalloc(sizeof(struct cc33xx_rx_filter), GFP_KERNEL);
+ }
+ 
+-void cc33xx_rx_filter_free(struct cc33xx_rx_filter *filter)
++static void cc33xx_rx_filter_free(struct cc33xx_rx_filter *filter)
+ {
+ 	int i;
+ 
+@@ -1635,7 +1635,7 @@ void cc33xx_rx_filter_free(struct cc33xx_rx_filter *filter)
+ 	kfree(filter);
+ }
+ 
+-int cc33xx_rx_filter_alloc_field(struct cc33xx_rx_filter *filter, u16 offset,
++static int cc33xx_rx_filter_alloc_field(struct cc33xx_rx_filter *filter, u16 offset,
+ 				 u8 flags, const u8 *pattern, u8 len)
+ {
+ 	struct cc33xx_rx_filter_field *field;
+@@ -2147,7 +2147,7 @@ static void cc33xx_turn_off(struct cc33xx *wl)
+ 	mutex_unlock(&wl->mutex);
+ }
+ 
+-static inline void cc33xx_op_stop(struct ieee80211_hw *hw)
++static inline void cc33xx_op_stop(struct ieee80211_hw *hw, bool suspend)
+ {
+ 	cc33xx_debug(DEBUG_MAC80211, "mac80211 stop");
+ 	return;
+@@ -2176,7 +2176,7 @@ static void cc33xx_channel_switch_work(struct work_struct *work)
+ 		goto out;
+ 
+ 	vif = cc33xx_wlvif_to_vif(wlvif);
+-	ieee80211_chswitch_done(vif, false);
++	ieee80211_chswitch_done(vif, false, 0);
+ 
+ 	cc33xx_cmd_stop_channel_switch(wl, wlvif);
+ 
+@@ -2881,7 +2881,7 @@ static int wlcore_set_assoc(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 	int ret;
+ 
+ 	wlvif->aid = vif->cfg.aid;
+-	wlvif->channel_type = cfg80211_get_chandef_type(&bss_conf->chandef);
++	wlvif->channel_type = cfg80211_get_chandef_type(&bss_conf->chanreq.oper);
+ 	wlvif->beacon_int = bss_conf->beacon_int;
+ 	wlvif->wmm_enabled = bss_conf->qos;
+ 
+@@ -2941,7 +2941,7 @@ static int wlcore_unset_assoc(struct cc33xx *wl, struct cc33xx_vif *wlvif)
+ 		struct ieee80211_vif *vif = cc33xx_wlvif_to_vif(wlvif);
+ 
+ 		cc33xx_cmd_stop_channel_switch(wl, wlvif);
+-		ieee80211_chswitch_done(vif, false);
++		ieee80211_chswitch_done(vif, false, 0);
+ 		cancel_delayed_work(&wlvif->channel_switch_work);
+ 	}
+ 
+@@ -2991,7 +2991,7 @@ static int cc33xx_config_vif(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 	return 0;
+ }
+ 
+-static int cc33xx_op_config(struct ieee80211_hw *hw, u32 changed)
++static int cc33xx_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
+ {
+ 	struct cc33xx *wl = hw->priv;
+ 	struct cc33xx_vif *wlvif;
+@@ -3071,7 +3071,7 @@ static void cc33xx_op_configure_filter(struct ieee80211_hw *hw,
+ {
+ 	struct cc33xx_filter_params *fp = (void *)(unsigned long)multicast;
+ 	struct cc33xx *wl = hw->priv;
+-	struct cc33xx_vif *wlvif;
++	struct cc33xx_vif *wlvif = NULL;
+ 
+ 	cc33xx_debug(DEBUG_MAC80211,
+ 		     "mac80211 configure filter, FIF_ALLMULTI = %d",
+@@ -3289,7 +3289,7 @@ static int cc33xx_set_host_cfg_bitmap(struct cc33xx *wl, u32 extra_mem_blk)
+ 	return 0;
+ }
+ 
+-int wlcore_set_key(struct cc33xx *wl, enum set_key_cmd cmd,
++static int wlcore_set_key(struct cc33xx *wl, enum set_key_cmd cmd,
+ 		   struct ieee80211_vif *vif, struct ieee80211_sta *sta,
+ 		   struct ieee80211_key_conf *key_conf)
+ {
+@@ -3672,12 +3672,12 @@ static int cc33xx_op_sched_scan_stop(struct ieee80211_hw *hw,
+ 	return 0;
+ }
+ 
+-static int cc33xx_op_set_frag_threshold(struct ieee80211_hw *hw, u32 value)
++static int cc33xx_op_set_frag_threshold(struct ieee80211_hw *hw, int radio_idx, u32 value)
+ {
+ 	return 0;
+ }
+ 
+-static int cc33xx_op_set_rts_threshold(struct ieee80211_hw *hw, u32 value)
++static int cc33xx_op_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx, u32 value)
+ {
+ 	return 0;
+ }
+@@ -4139,7 +4139,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+ 
+ 	/* Handle new association with HT. Do this after join. */
+ 	if (sta_exists) {
+-		bool enabled = bss_conf->chandef.width != 
++		bool enabled = bss_conf->chanreq.oper.width != 
+ 						NL80211_CHAN_WIDTH_20_NOHT;
+ 		cc33xx_debug(DEBUG_CMD, "+++Debug wlcore_hw_set_peer_cap %x",
+ 					wlvif->rate_set);
+@@ -4985,7 +4985,7 @@ static void cc33xx_op_channel_switch(struct ieee80211_hw *hw,
+ 
+ 	if (unlikely(wl->state == WLCORE_STATE_OFF)) {
+ 		if (test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))
+-			ieee80211_chswitch_done(vif, false);
++			ieee80211_chswitch_done(vif, false, 0);
+ 		goto out;
+ 	} else if (unlikely(wl->state != WLCORE_STATE_ON)) {
+ 		goto out;
+@@ -5152,7 +5152,7 @@ static int cc33xx_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
+ 
+ static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
+ 				    struct ieee80211_vif *vif,
+-				    struct ieee80211_sta *sta,
++				    struct ieee80211_link_sta *link_sta,
+ 				    u32 changed)
+ {
+ 	struct cc33xx_vif *wlvif = cc33xx_vif_to_data(vif);
+@@ -5163,8 +5163,8 @@ static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
+ 		return;
+ 
+ 	/* this callback is atomic, so schedule a new work */
+-	wlvif->rc_update_bw = sta->deflink.bandwidth;
+-	memcpy(&wlvif->rc_ht_cap, &sta->deflink.ht_cap, sizeof(sta->deflink.ht_cap));
++	wlvif->rc_update_bw = link_sta->sta->deflink.bandwidth;
++	memcpy(&wlvif->rc_ht_cap, &link_sta->sta->deflink.ht_cap, sizeof(link_sta->sta->deflink.ht_cap));
+ 	ieee80211_queue_work(hw, &wlvif->rc_update_work);
+ }
+ 
+@@ -5243,6 +5243,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+ 	.prepare_multicast = cc33xx_op_prepare_multicast,
+ 	.configure_filter = cc33xx_op_configure_filter,
+ 	.tx = cc33xx_op_tx,
++	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
+ 	.set_key = cc33xx_op_set_key,
+ 	.hw_scan = cc33xx_op_hw_scan,
+ 	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
+@@ -5270,7 +5271,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+ 	.assign_vif_chanctx = cc33xx_op_assign_vif_chanctx,
+ 	.unassign_vif_chanctx = cc33xx_op_unassign_vif_chanctx,
+ 	.switch_vif_chanctx = cc33xx_op_switch_vif_chanctx,
+-	.sta_rc_update = cc33xx_op_sta_rc_update,
++	.link_sta_rc_update = cc33xx_op_sta_rc_update,
+ 	.sta_statistics = cc33xx_op_sta_statistics,
+ 	.get_expected_throughput = cc33xx_op_get_expected_throughput,
+ 	CFG80211_TESTMODE_CMD(cc33xx_tm_cmd)
+@@ -5319,6 +5320,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+ 	.prepare_multicast = cc33xx_op_prepare_multicast,
+ 	.configure_filter = cc33xx_op_configure_filter,
+ 	.tx = cc33xx_op_tx,
++	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
+ 	.set_key = cc33xx_op_set_key,
+ 	.hw_scan = cc33xx_op_hw_scan,
+ 	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
+@@ -5701,11 +5703,11 @@ static int cc33xx_init_ieee80211(struct cc33xx *wl)
+ 	alloc_workqueue("%s", __WQ_LEGACY | WQ_FREEZABLE | WQ_UNBOUND |	\
+ 			WQ_MEM_RECLAIM | WQ_HIGHPRI, 1, (name))
+ 
+-struct ieee80211_hw *wlcore_alloc_hw(u32 aggr_buf_size)
++static struct ieee80211_hw *wlcore_alloc_hw(u32 aggr_buf_size)
+ {
+ 	struct ieee80211_hw *hw;
+ 	struct cc33xx *wl;
+-	int i, j, ret;
++	int i, j, ret = 0;
+ 	unsigned int order;
+ 
+ 	hw = ieee80211_alloc_hw(sizeof(*wl), &cc33xx_ops);
+@@ -5841,7 +5843,7 @@ struct ieee80211_hw *wlcore_alloc_hw(u32 aggr_buf_size)
+ 	return ERR_PTR(ret);
+ }
+ 
+-int wlcore_free_hw(struct cc33xx *wl)
++static int wlcore_free_hw(struct cc33xx *wl)
+ {
+ 	/* Unblock any fwlog readers */
+ 	mutex_lock(&wl->mutex);
+@@ -6056,7 +6058,7 @@ int wlcore_probe(struct cc33xx *wl, struct platform_device *pdev)
+ 	return ret;
+ }
+ 
+-int wlcore_remove(struct platform_device *pdev)
++static void wlcore_remove(struct platform_device *pdev)
+ {
+ 	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&pdev->dev);
+ 	struct cc33xx *wl = platform_get_drvdata(pdev);
+@@ -6084,7 +6086,6 @@ int wlcore_remove(struct platform_device *pdev)
+ 
+ out:
+ 	wlcore_free_hw(wl);
+-	return 0;
+ }
+ 
+ static int cc33xx_load_ini_bin_file(struct device *dev,
+@@ -6278,5 +6279,6 @@ MODULE_PARM_DESC(ht_mode, "Force HT mode: wide or siso20");
+ MODULE_LICENSE("GPL v2");
+ MODULE_AUTHOR("Luciano Coelho <coelho@ti.com>");
+ MODULE_AUTHOR("Juuso Oikarinen <juuso.oikarinen@nokia.com>");
++MODULE_DESCRIPTION("TI CC33xx Wireless driver");
+ MODULE_FIRMWARE(SECOND_LOADER_NAME);
+ MODULE_FIRMWARE(FW_NAME);
+diff --git a/drivers/net/wireless/ti/cc33xx/scan.c b/drivers/net/wireless/ti/cc33xx/scan.c
+index 750a776fbb94..f7c194ce737a 100644
+--- a/drivers/net/wireless/ti/cc33xx/scan.c
++++ b/drivers/net/wireless/ti/cc33xx/scan.c
+@@ -339,10 +339,6 @@ static bool wlcore_set_scan_chan_params(struct cc33xx *wl,
+ 						  MAX_CHANNELS_5GHZ,
+ 						  &n_pactive_ch, scan_type);
+ 
+-	/* 802.11j channels are not supported yet */
+-	cfg->passive[2] = 0;
+-	cfg->active[2] = 0;
+-
+ 	cfg->passive_active = n_pactive_ch;
+ 
+ 	cc33xx_debug(DEBUG_SCAN, "2.4GHz: active %d passive %d",
+@@ -687,7 +683,7 @@ void cc33xx_scan_sched_scan_stop(struct cc33xx *wl,
+ 	__cc33xx_scan_stop(wl, wlvif, SCAN_REQUEST_CONNECT_PERIODIC_SCAN);
+ }
+ 
+-int cc33xx_scan_start(struct cc33xx *wl, struct cc33xx_vif *wlvif,
++static int cc33xx_scan_start(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 		      struct cfg80211_scan_request *req)
+ {
+ 	return cc33xx_scan_send(wl, wlvif, req);
+@@ -783,7 +779,7 @@ int wlcore_scan(struct cc33xx *wl, struct ieee80211_vif *vif, const u8 *ssid,
+ 	return 0;
+ }
+ 
+-void inline wlcore_scan_sched_scan_results(struct cc33xx *wl)
++inline void wlcore_scan_sched_scan_results(struct cc33xx *wl)
+ {
+ 	cc33xx_debug(DEBUG_SCAN, "got periodic scan results");
+ 
+diff --git a/drivers/net/wireless/ti/cc33xx/scan.h b/drivers/net/wireless/ti/cc33xx/scan.h
+index dbda7a66abc4..d7310613dd5a 100644
+--- a/drivers/net/wireless/ti/cc33xx/scan.h
++++ b/drivers/net/wireless/ti/cc33xx/scan.h
+@@ -48,7 +48,6 @@ enum {
+ #define MAX_CHANNELS_5GHZ	32
+ 
+ #define SCAN_MAX_CYCLE_INTERVALS 16
+-#define SCAN_MAX_BANDS 3
+ #define SCHED_SCAN_MAX_SSIDS 16
+ 
+ /******************************************************************************
+@@ -360,8 +359,8 @@ enum {
+ #define SCAN_CHANNEL_FLAGS_DFS_ENABLED	BIT(1)
+ 
+ struct wlcore_scan_channels {
+-	u8 passive[SCAN_MAX_BANDS]; /* number of passive scan channels */
+-	u8 active[SCAN_MAX_BANDS];  /* number of active scan channels */
++	u8 passive[CONN_SCAN_MAX_BAND]; /* number of passive scan channels */
++	u8 active[CONN_SCAN_MAX_BAND];  /* number of active scan channels */
+ 	u8 dfs;		   /* number of dfs channels in 5ghz */
+ 	u8 passive_active; /* number of passive before active channels 2.4ghz */
+ 
+diff --git a/drivers/net/wireless/ti/cc33xx/sdio.c b/drivers/net/wireless/ti/cc33xx/sdio.c
+index 9f8ac1931250..c6270822522b 100644
+--- a/drivers/net/wireless/ti/cc33xx/sdio.c
++++ b/drivers/net/wireless/ti/cc33xx/sdio.c
+@@ -634,3 +634,4 @@ MODULE_PARM_DESC(dump, "Enable sdio read/write dumps.");
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("Luciano Coelho <coelho@ti.com>");
+ MODULE_AUTHOR("Juuso Oikarinen <juuso.oikarinen@nokia.com>");
++MODULE_DESCRIPTION("SDIO Driver for TI CC33xx Wireless Devices");
+diff --git a/drivers/net/wireless/ti/cc33xx/spi.c b/drivers/net/wireless/ti/cc33xx/spi.c
+index 691970355df7..14243cfca4cd 100644
+--- a/drivers/net/wireless/ti/cc33xx/spi.c
++++ b/drivers/net/wireless/ti/cc33xx/spi.c
+@@ -74,7 +74,7 @@ static void __cc33xx_spi_lock(struct cc33xx_spi_glue *glue)
+ {
+ 	if (glue->locking_pid != current->pid)
+ 	{
+-		spi_bus_lock(to_spi_device(glue->dev)->master);
++		spi_bus_lock(to_spi_device(glue->dev)->controller);
+ 		glue->locking_pid = current->pid;
+ 		glue->lock_count = 1;
+ 	} else {
+@@ -90,7 +90,7 @@ static void __cc33xx_spi_unlock(struct cc33xx_spi_glue *glue)
+ 	glue->lock_count--;
+ 	if (!glue->lock_count){
+ 		glue->locking_pid = 0;
+-		spi_bus_unlock(to_spi_device(glue->dev)->master);
++		spi_bus_unlock(to_spi_device(glue->dev)->controller);
+ 	}
+ }
+ 
+@@ -679,6 +679,7 @@ static struct spi_driver cc33xx_spi_driver = {
+ 
+ module_spi_driver(cc33xx_spi_driver);
+ MODULE_LICENSE("GPL");
++MODULE_DESCRIPTION("SPI Driver for TI CC33xx Wireless Devices");
+ MODULE_AUTHOR("Luciano Coelho <coelho@ti.com>");
+ MODULE_AUTHOR("Juuso Oikarinen <juuso.oikarinen@nokia.com>");
+ MODULE_ALIAS("spi:cc33xx");
+diff --git a/drivers/net/wireless/ti/cc33xx/sysfs.c b/drivers/net/wireless/ti/cc33xx/sysfs.c
+index 2c8cf0829c25..86dd5e424b5e 100644
+--- a/drivers/net/wireless/ti/cc33xx/sysfs.c
++++ b/drivers/net/wireless/ti/cc33xx/sysfs.c
+@@ -5,12 +5,61 @@
+  * Copyright (C) 2013 Texas Instruments Inc.
+  */
+ 
++#include <linux/device.h>
+ #include "acx.h"
+ #include "sysfs.h"
+ 
++static ssize_t ble_enable_show(struct device *dev,
++				  struct device_attribute *attr,
++				  char *buf)
++{
++	struct cc33xx *cc = dev_get_drvdata(dev);
++	ssize_t len;
++
++	mutex_lock(&cc->mutex);
++	len = sysfs_emit(buf, "%d\n", cc->ble_enable);
++	mutex_unlock(&cc->mutex);
++
++	return len;
++}
++
++static ssize_t ble_enable_store(struct device *dev,
++				   struct device_attribute *attr,
++				   const char *buf, size_t count)
++{
++	struct cc33xx *cc = dev_get_drvdata(dev);
++	int ret;
++	unsigned long value;
++
++	ret = kstrtoul(buf, 10, &value);
++	if (value != 1) {
++		cc33xx_warning("illegal value in ble_enable (only value allowed is is 1)");
++		cc33xx_warning("ble_enable cant be disabled after being enabled.");
++		return -EINVAL;
++	}
++
++	if (value == cc->ble_enable) {
++		cc33xx_warning("ble_enable is already %d",cc->ble_enable);
++		return -EINVAL;
++	}
++
++	mutex_lock(&cc->mutex);
++
++	if (unlikely(cc->state != WLCORE_STATE_ON)) {
++		/* this will show up on "read" in case we are off */
++		cc->ble_enable = value;
++		goto out;
++	}
++
++	cc33xx_ble_enable(cc, value);
++out:
++	mutex_unlock(&cc->mutex);
++	return count;
++}
++static DEVICE_ATTR_RW(ble_enable);
+ 
+ static ssize_t cc33xx_sysfs_read_fwlog(struct file *filp, struct kobject *kobj,
+-				       struct bin_attribute *bin_attr,
++				       const struct bin_attribute *bin_attr,
+ 				       char *buffer, loff_t pos, size_t count)
+ {
+ 	struct device *dev = container_of(kobj, struct device, kobj);
+@@ -50,6 +99,11 @@ int wlcore_sysfs_init(struct cc33xx *wl)
+ {
+ 	int ret;
+ 
++	ret = device_create_file(wl->dev, &dev_attr_ble_enable);
++	if (ret < 0) {
++		cc33xx_error("failed to create sysfs file bt_coex_state");
++	}
++
+ 	/* Create sysfs file for the FW log */
+ 	ret = device_create_bin_file(wl->dev, &fwlog_attr);
+ 	if (ret < 0) {
+@@ -62,4 +116,5 @@ int wlcore_sysfs_init(struct cc33xx *wl)
+ void wlcore_sysfs_free(struct cc33xx *wl)
+ {
+ 	device_remove_bin_file(wl->dev, &fwlog_attr);
++	device_remove_file(wl->dev, &dev_attr_ble_enable);
+ }
+diff --git a/drivers/net/wireless/ti/cc33xx/tx.c b/drivers/net/wireless/ti/cc33xx/tx.c
+index 8d7a811226de..efdaf0398e56 100644
+--- a/drivers/net/wireless/ti/cc33xx/tx.c
++++ b/drivers/net/wireless/ti/cc33xx/tx.c
+@@ -165,7 +165,7 @@ u8 cc33xx_tx_get_hlid(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 	return wlvif->sta.hlid;
+ }
+ 
+-unsigned int wlcore_calc_packet_alignment(struct cc33xx *wl,
++unsigned int cc33xx_calc_packet_alignment(struct cc33xx *wl,
+ 					  unsigned int packet_length)
+ {
+ 	if ((wl->quirks & WLCORE_QUIRK_TX_PAD_LAST_FRAME) ||
+@@ -174,7 +174,7 @@ unsigned int wlcore_calc_packet_alignment(struct cc33xx *wl,
+ 	else
+ 		return ALIGN(packet_length, CC33XX_BUS_BLOCK_SIZE);
+ }
+-EXPORT_SYMBOL(wlcore_calc_packet_alignment);
++EXPORT_SYMBOL(cc33xx_calc_packet_alignment);
+ 
+ static u32 cc33xx_calc_tx_blocks(struct cc33xx *wl, u32 len, u32 spare_blks)
+ {
+@@ -530,7 +530,7 @@ static int cc33xx_prepare_tx_frame(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ 	 * In special cases, we want to align to a specific block size
+ 	 * (eg. for wl128x with SDIO we align to 256).
+ 	 */
+-	total_len = wlcore_calc_packet_alignment(wl, skb->len);
++	total_len = cc33xx_calc_packet_alignment(wl, skb->len);
+ 	cc33xx_debug(DEBUG_TX, "wlcore_calc_packet_alignment ");
+ 
+ 	memcpy(wl->aggr_buf + buf_offset,
+diff --git a/drivers/net/wireless/ti/cc33xx/tx.h b/drivers/net/wireless/ti/cc33xx/tx.h
+index bda24925daf8..8b3c51a1c7b3 100644
+--- a/drivers/net/wireless/ti/cc33xx/tx.h
++++ b/drivers/net/wireless/ti/cc33xx/tx.h
+@@ -143,7 +143,7 @@ u8 cc33xx_tx_get_hlid(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+ void cc33xx_tx_reset_link_queues(struct cc33xx *wl, u8 hlid);
+ void cc33xx_handle_tx_low_watermark(struct cc33xx *wl);
+ bool cc33xx_is_dummy_packet(struct cc33xx *wl, struct sk_buff *skb);
+-unsigned int wlcore_calc_packet_alignment(struct cc33xx *wl,
++unsigned int cc33xx_calc_packet_alignment(struct cc33xx *wl,
+ 					  unsigned int packet_length);
+ void cc33xx_free_tx_id(struct cc33xx *wl, int id);
+ void wlcore_stop_queue_locked(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+diff --git a/net/mac80211/mlme.c b/net/mac80211/mlme.c
+index 44913f5b01fe..f3138d158535 100644
+--- a/net/mac80211/mlme.c
++++ b/net/mac80211/mlme.c
+@@ -1737,9 +1737,6 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
+ 	int present_elems_len = 0;
+ 	u8 *pos;
+ 	int i;
+-	u8 opmode_notif = 0; 
+-	u8 rx_nss = 0; 
+-	u8 rx_nss_type = 0;
+ 
+ #define ADD_PRESENT_ELEM(id) do {					\
+ 	/* need a last for termination - we use 0 == SSID */		\
+@@ -1848,25 +1845,6 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
+ 					     &assoc_data->link[link_id].ap_vht_cap,
+ 					     &assoc_data->link[link_id].conn);
+ 
+-		//Add operation mode notification element when operating at 20 MHz bandwidth
+-		if(chanctx_conf->def.width == NL80211_CHAN_WIDTH_20)
+-		{
+-			/*  Operating Mode Notification element */
+-			rx_nss = 0;
+-			rx_nss_type= 0;
+-			opmode_notif |= IEEE80211_OPMODE_NOTIF_CHANWIDTH_20MHZ; 
+-			rx_nss <<= IEEE80211_OPMODE_NOTIF_RX_NSS_SHIFT;
+-			rx_nss_type <<= (IEEE80211_OPMODE_NOTIF_RX_NSS_SHIFT + 3);
+-			opmode_notif |= rx_nss;
+-			opmode_notif |= rx_nss_type;
+-
+-			pos = skb_put(skb, 2 + sizeof(u8));
+-
+-			*pos++ = WLAN_EID_OPMODE_NOTIF;
+-			*pos++ = sizeof(u8);
+-			*pos++ = opmode_notif;
+-		}
+-
+ 		if (link)
+ 			link->conf->mu_mimo_owner = mu_mimo_owner;
+ 		ADD_PRESENT_ELEM(WLAN_EID_VHT_CAPABILITY);
+diff --git a/net/mac80211/wpa.c b/net/mac80211/wpa.c
+index ad3d0693f471..40d5d9e48479 100644
+--- a/net/mac80211/wpa.c
++++ b/net/mac80211/wpa.c
+@@ -547,13 +547,13 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx,
+ 	if (!rx->sta || data_len < 0)
+ 		return RX_DROP_U_SHORT_CCMP;
+ 
+-	ccmp_hdr2pn(pn, skb->data + hdrlen);
+-
+-	queue = rx->security_idx;
+-
+ 	if (!(status->flag & RX_FLAG_PN_VALIDATED)) {
+ 		int res;
+ 
++		ccmp_hdr2pn(pn, skb->data + hdrlen);
++
++		queue = rx->security_idx;
++
+ 		res = memcmp(pn, key->u.ccmp.rx_pn[queue],
+ 			     IEEE80211_CCMP_PN_LEN);
+ 		if (res < 0 ||
+@@ -576,11 +576,11 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx,
+ 				    skb->data + skb->len - mic_len))
+ 				return RX_DROP_U_MIC_FAIL;
+ 		}
+-	}
+ 
+-	memcpy(key->u.ccmp.rx_pn[queue], pn, IEEE80211_CCMP_PN_LEN);
+-	if (unlikely(ieee80211_is_frag(hdr)))
+-		memcpy(rx->ccm_gcm.pn, pn, IEEE80211_CCMP_PN_LEN);
++		memcpy(key->u.ccmp.rx_pn[queue], pn, IEEE80211_CCMP_PN_LEN);
++		if (unlikely(ieee80211_is_frag(hdr)))
++			memcpy(rx->ccm_gcm.pn, pn, IEEE80211_CCMP_PN_LEN);
++	}
+ 
+ 	/* Remove CCMP header and MIC */
+ 	if (pskb_trim(skb, skb->len - mic_len))
+@@ -743,13 +743,13 @@ ieee80211_crypto_gcmp_decrypt(struct ieee80211_rx_data *rx)
+ 	if (!rx->sta || data_len < 0)
+ 		return RX_DROP_U_SHORT_GCMP;
+ 
+-	gcmp_hdr2pn(pn, skb->data + hdrlen);
+-
+-	queue = rx->security_idx;
+-
+ 	if (!(status->flag & RX_FLAG_PN_VALIDATED)) {
+ 		int res;
+ 
++		gcmp_hdr2pn(pn, skb->data + hdrlen);
++
++		queue = rx->security_idx;
++
+ 		res = memcmp(pn, key->u.gcmp.rx_pn[queue],
+ 			     IEEE80211_GCMP_PN_LEN);
+ 		if (res < 0 ||
+@@ -773,11 +773,11 @@ ieee80211_crypto_gcmp_decrypt(struct ieee80211_rx_data *rx)
+ 				    IEEE80211_GCMP_MIC_LEN))
+ 				return RX_DROP_U_MIC_FAIL;
+ 		}
+-	}
+ 
+-	memcpy(key->u.gcmp.rx_pn[queue], pn, IEEE80211_GCMP_PN_LEN);
+-	if (unlikely(ieee80211_is_frag(hdr)))
+-		memcpy(rx->ccm_gcm.pn, pn, IEEE80211_CCMP_PN_LEN);
++		memcpy(key->u.gcmp.rx_pn[queue], pn, IEEE80211_GCMP_PN_LEN);
++		if (unlikely(ieee80211_is_frag(hdr)))
++			memcpy(rx->ccm_gcm.pn, pn, IEEE80211_CCMP_PN_LEN);
++	}
+ 
+ 	/* Remove GCMP header and MIC */
+ 	if (pskb_trim(skb, skb->len - mic_len))
+-- 
+2.34.1
+
