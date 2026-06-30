@@ -1,18 +1,19 @@
-From 6a85092c4926e7ede0c4b7727f182958aeda83ca Mon Sep 17 00:00:00 2001
+From e9a0a0a98a985507bbd87fac5a55b0b2822d1400 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
-Date: Mon, 8 Sep 2025 11:37:51 -0500
-Subject: [PATCH] backport 1.0.2.10 SDK to k5.10
+Date: Tue, 30 Jun 2026 13:31:48 -0500
+Subject: [PATCH] backport 1.0.2.14 SDK to k5.10
 
 ---
- drivers/net/wireless/ti/cc33xx/acx.c  |  6 +--
- drivers/net/wireless/ti/cc33xx/cmd.c  | 19 +++----
- drivers/net/wireless/ti/cc33xx/main.c | 71 +++++++++++++--------------
- drivers/net/wireless/ti/cc33xx/sdio.c |  2 +-
- net/mac80211/mlme.c                   | 17 +++++--
- 5 files changed, 60 insertions(+), 55 deletions(-)
+ drivers/net/wireless/ti/cc33xx/acx.c   |  6 +--
+ drivers/net/wireless/ti/cc33xx/cmd.c   | 19 +++----
+ drivers/net/wireless/ti/cc33xx/main.c  | 71 ++++++++++++--------------
+ drivers/net/wireless/ti/cc33xx/sdio.c  |  2 +-
+ drivers/net/wireless/ti/cc33xx/sysfs.c |  8 +--
+ net/mac80211/mlme.c                    | 17 ++++--
+ 6 files changed, 64 insertions(+), 59 deletions(-)
 
 diff --git a/drivers/net/wireless/ti/cc33xx/acx.c b/drivers/net/wireless/ti/cc33xx/acx.c
-index 51b99668f207..4b7f99aaf45c 100644
+index 809631285683..a4d4b2af9db6 100644
 --- a/drivers/net/wireless/ti/cc33xx/acx.c
 +++ b/drivers/net/wireless/ti/cc33xx/acx.c
 @@ -350,9 +350,9 @@ int cc33xx_assoc_info_cfg(struct cc33xx *wl, struct cc33xx_vif *wlvif,
@@ -29,10 +30,10 @@ index 51b99668f207..4b7f99aaf45c 100644
  	ret = cc33xx_cmd_configure(wl, ASSOC_INFO_CFG, cfg, sizeof(*cfg));
  	if (ret < 0) {
 diff --git a/drivers/net/wireless/ti/cc33xx/cmd.c b/drivers/net/wireless/ti/cc33xx/cmd.c
-index 91fe0513398d..8abf8fe708e9 100644
+index cf40931016fc..d3d2ee18ce71 100644
 --- a/drivers/net/wireless/ti/cc33xx/cmd.c
 +++ b/drivers/net/wireless/ti/cc33xx/cmd.c
-@@ -393,6 +393,7 @@ static u8 check_is_dfs_channel(struct cc33xx *wl,
+@@ -394,6 +394,7 @@ static u8 check_is_dfs_channel(struct cc33xx *wl,
  						enum nl80211_band rate_band, u8 channel)
  {
  	struct ieee80211_supported_band *band;
@@ -40,7 +41,7 @@ index 91fe0513398d..8abf8fe708e9 100644
  	u8 is_dfs = 0;
  
  	if (rate_band != NL80211_BAND_5GHZ)
-@@ -402,7 +403,7 @@ static u8 check_is_dfs_channel(struct cc33xx *wl,
+@@ -403,7 +404,7 @@ static u8 check_is_dfs_channel(struct cc33xx *wl,
  
  	band = wl->hw->wiphy->bands[NL80211_BAND_5GHZ];
  
@@ -49,7 +50,7 @@ index 91fe0513398d..8abf8fe708e9 100644
  	{
  		if (band->channels[i].hw_value == channel)
  		{
-@@ -1462,11 +1463,11 @@ int cc33xx_cmd_add_peer(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+@@ -1463,11 +1464,11 @@ int cc33xx_cmd_add_peer(struct cc33xx *wl, struct cc33xx_vif *wlvif,
  		}
  	}
  
@@ -65,7 +66,7 @@ index 91fe0513398d..8abf8fe708e9 100644
  	}
  
  	cmd->supported_rates =
-@@ -1483,14 +1484,14 @@ int cc33xx_cmd_add_peer(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+@@ -1484,14 +1485,14 @@ int cc33xx_cmd_add_peer(struct cc33xx *wl, struct cc33xx_vif *wlvif,
  	cc33xx_debug(DEBUG_CMD, "new peer rates=0x%x queues=0x%x",
  		     cmd->supported_rates, sta->uapsd_queues);
  			
@@ -85,10 +86,10 @@ index 91fe0513398d..8abf8fe708e9 100644
  	ret = cc33xx_cmd_send(wl, CMD_ADD_PEER, cmd, sizeof(*cmd), 0);
  	if (ret < 0) {
 diff --git a/drivers/net/wireless/ti/cc33xx/main.c b/drivers/net/wireless/ti/cc33xx/main.c
-index f6ed3561ccf5..3c5f8a3f8e36 100644
+index 41d595d955cf..39cbbba8685c 100644
 --- a/drivers/net/wireless/ti/cc33xx/main.c
 +++ b/drivers/net/wireless/ti/cc33xx/main.c
-@@ -312,7 +312,7 @@ static struct ieee80211_sband_iftype_data iftype_data_2ghz[] = {{
+@@ -315,7 +315,7 @@ static struct ieee80211_sband_iftype_data iftype_data_2ghz[] = {{
  			IEEE80211_HE_MAC_CAP3_OMI_CONTROL |
  			IEEE80211_HE_MAC_CAP3_RX_CTRL_FRAME_TO_MULTIBSS,
  		.mac_cap_info[4] =
@@ -97,7 +98,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			IEEE80211_HE_MAC_CAP4_NDP_FB_REP |
  			IEEE80211_HE_MAC_CAP4_MULTI_TID_AGG_TX_QOS_B39,
  		.mac_cap_info[5] =
-@@ -337,8 +337,8 @@ static struct ieee80211_sband_iftype_data iftype_data_2ghz[] = {{
+@@ -340,8 +340,8 @@ static struct ieee80211_sband_iftype_data iftype_data_2ghz[] = {{
  		.phy_cap_info[6] =
  			IEEE80211_HE_PHY_CAP6_CODEBOOK_SIZE_42_SU  |
  			IEEE80211_HE_PHY_CAP6_CODEBOOK_SIZE_75_MU  |
@@ -108,7 +109,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			IEEE80211_HE_PHY_CAP6_TRIG_CQI_FB |
  			IEEE80211_HE_PHY_CAP6_PARTIAL_BW_EXT_RANGE,
  		.phy_cap_info[7] =
-@@ -351,8 +351,7 @@ static struct ieee80211_sband_iftype_data iftype_data_2ghz[] = {{
+@@ -354,8 +354,7 @@ static struct ieee80211_sband_iftype_data iftype_data_2ghz[] = {{
  			IEEE80211_HE_PHY_CAP9_NON_TRIGGERED_CQI_FEEDBACK |
  			IEEE80211_HE_PHY_CAP9_RX_FULL_BW_SU_USING_MU_WITH_COMP_SIGB |
  			IEEE80211_HE_PHY_CAP9_RX_FULL_BW_SU_USING_MU_WITH_NON_COMP_SIGB |				
@@ -118,7 +119,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  		},
  		/*
  		* Set default Tx/Rx HE MCS NSS Support field.
-@@ -488,7 +487,7 @@ static struct ieee80211_sband_iftype_data iftype_data_5ghz[] = {{
+@@ -491,7 +490,7 @@ static struct ieee80211_sband_iftype_data iftype_data_5ghz[] = {{
  			IEEE80211_HE_MAC_CAP3_OMI_CONTROL |
  			IEEE80211_HE_MAC_CAP3_RX_CTRL_FRAME_TO_MULTIBSS,
  		.mac_cap_info[4] =
@@ -127,7 +128,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			IEEE80211_HE_MAC_CAP4_NDP_FB_REP |
  			IEEE80211_HE_MAC_CAP4_MULTI_TID_AGG_TX_QOS_B39,
  		.mac_cap_info[5] =
-@@ -513,8 +512,8 @@ static struct ieee80211_sband_iftype_data iftype_data_5ghz[] = {{
+@@ -516,8 +515,8 @@ static struct ieee80211_sband_iftype_data iftype_data_5ghz[] = {{
  		.phy_cap_info[6] =
  			IEEE80211_HE_PHY_CAP6_CODEBOOK_SIZE_42_SU  |
  			IEEE80211_HE_PHY_CAP6_CODEBOOK_SIZE_75_MU  |
@@ -138,7 +139,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			IEEE80211_HE_PHY_CAP6_TRIG_CQI_FB |
  			IEEE80211_HE_PHY_CAP6_PARTIAL_BW_EXT_RANGE,
  		.phy_cap_info[7] =
-@@ -527,8 +526,7 @@ static struct ieee80211_sband_iftype_data iftype_data_5ghz[] = {{
+@@ -530,8 +529,7 @@ static struct ieee80211_sband_iftype_data iftype_data_5ghz[] = {{
  			IEEE80211_HE_PHY_CAP9_NON_TRIGGERED_CQI_FEEDBACK |
  			IEEE80211_HE_PHY_CAP9_RX_FULL_BW_SU_USING_MU_WITH_COMP_SIGB |
  			IEEE80211_HE_PHY_CAP9_RX_FULL_BW_SU_USING_MU_WITH_NON_COMP_SIGB |			
@@ -148,7 +149,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  		},
  		/*
  			* Set default Tx/Rx HE MCS NSS Support field.
-@@ -2880,7 +2878,7 @@ static int wlcore_set_assoc(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+@@ -2959,7 +2957,7 @@ static int wlcore_set_assoc(struct cc33xx *wl, struct cc33xx_vif *wlvif,
  {
  	int ret;
  
@@ -157,7 +158,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  	wlvif->channel_type = cfg80211_get_chandef_type(&bss_conf->chandef);
  	wlvif->beacon_int = bss_conf->beacon_int;
  	wlvif->wmm_enabled = bss_conf->qos;
-@@ -3733,7 +3731,7 @@ static int wlcore_set_beacon_template(struct cc33xx *wl,
+@@ -3812,7 +3810,7 @@ static int wlcore_set_beacon_template(struct cc33xx *wl,
  	struct cc33xx_vif *wlvif = cc33xx_vif_to_data(vif);
  	int ret;
  	int ieoffset = offsetof(struct ieee80211_mgmt, u.beacon.variable);
@@ -166,7 +167,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  
  	struct cc33xx_cmd_set_beacon_info *cmd;
  
-@@ -3888,7 +3886,7 @@ static int wlcore_set_bssid(struct cc33xx *wl, struct cc33xx_vif *wlvif,
+@@ -3967,7 +3965,7 @@ static int wlcore_set_bssid(struct cc33xx *wl, struct cc33xx_vif *wlvif,
  
  	cc33xx_debug(DEBUG_MAC80211, "changed_bssid: %pM, aid: %d, bcn_int: %d,"
  			" brates: 0x%x sta_rate_set: 0x%x, nontx: %d",
@@ -175,7 +176,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			bss_conf->basic_rates, sta_rate_set,
  			bss_conf->nontransmitted);
  
-@@ -3974,7 +3972,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4111,7 +4109,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  	}
  
  	if (changed & BSS_CHANGED_IBSS) {
@@ -184,16 +185,16 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			set_bit(WLVIF_FLAG_IBSS_JOINED, &wlvif->flags);
  			ibss_joined = true;
  		} else {
-@@ -3998,7 +3996,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4135,7 +4133,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  	}
  
  	if (changed & BSS_CHANGED_IDLE && !is_ibss)
 -		cc33xx_sta_handle_idle(wl, wlvif, vif->cfg.idle);
 +		cc33xx_sta_handle_idle(wl, wlvif, bss_conf->idle);
  
- 	if (changed & BSS_CHANGED_CQM)
- 		wlvif->rssi_thold = bss_conf->cqm_rssi_thold;
-@@ -4007,17 +4005,17 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+ 	if (changed & BSS_CHANGED_CQM) {
+ 		ret = cc33xx_configure_cqm(wl, wlvif, bss_conf->cqm_rssi_thold, bss_conf->cqm_rssi_hyst);
+@@ -4147,17 +4145,17 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  		rcu_read_lock();
  		sta = ieee80211_find_sta(vif, bss_conf->bssid);
  		if (sta) {
@@ -216,7 +217,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			sta_exists = true;
  		}
  
-@@ -4042,9 +4040,9 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4182,9 +4180,9 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  
  	if (changed & BSS_CHANGED_IBSS) {
  		cc33xx_debug(DEBUG_ADHOC, "ibss_joined: %d",
@@ -228,7 +229,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			u32 rates = bss_conf->basic_rates;
  			wlvif->basic_rate_set =
  				cc33xx_tx_enabled_rates_get(wl, rates,
-@@ -4078,7 +4076,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4218,7 +4216,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  	}
  
  	if (changed & BSS_CHANGED_ASSOC) {
@@ -237,7 +238,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			ret = wlcore_set_assoc(wl, wlvif, bss_conf,sta, vif,
   					       sta_rate_set);
  			if (ret < 0)
-@@ -4091,9 +4089,9 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4231,9 +4229,9 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  				struct cc33xx_vif *wlvif_itr;
  				u8 he_count = 0;
  
@@ -249,7 +250,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  					cc33xx_info("HE Enabled");		
  				else
  					cc33xx_info("HE Disabled");
-@@ -4123,9 +4121,9 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4263,9 +4261,9 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  		ret=0;
  
  		if (wl->conf.mac.ps_mode == STATION_AUTO_PS_MODE){
@@ -261,7 +262,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  				ret = cc33xx_ps_set_mode(wl, wlvif, STATION_ACTIVE_MODE);
  			}
  		} else {
-@@ -4167,11 +4165,11 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4307,11 +4305,11 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  	/* Handle arp filtering. Done after join. */
  	if ((changed & BSS_CHANGED_ARP_FILTER) ||
  	    (!is_ibss && (changed & BSS_CHANGED_QOS))) {
@@ -275,7 +276,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			wlvif->ip_addr = addr;
  			/*
  			 * The template should have been configured only upon
-@@ -4198,7 +4196,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
+@@ -4338,7 +4336,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *wl,
  static void cc33xx_op_bss_info_changed(struct ieee80211_hw *hw,
  				       struct ieee80211_vif *vif,
  				       struct ieee80211_bss_conf *bss_conf,
@@ -284,7 +285,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  {
  	struct cc33xx *wl = hw->priv;
  	struct cc33xx_vif *wlvif = cc33xx_vif_to_data(vif);
-@@ -4284,7 +4282,7 @@ static void cc33xx_op_change_chanctx(struct ieee80211_hw *hw,
+@@ -4424,7 +4422,7 @@ static void cc33xx_op_change_chanctx(struct ieee80211_hw *hw,
  		struct ieee80211_vif *vif = cc33xx_wlvif_to_vif(wlvif);
  
  		rcu_read_lock();
@@ -293,7 +294,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			rcu_read_unlock();
  			continue;
  		}
-@@ -4306,7 +4304,6 @@ static void cc33xx_op_change_chanctx(struct ieee80211_hw *hw,
+@@ -4446,7 +4444,6 @@ static void cc33xx_op_change_chanctx(struct ieee80211_hw *hw,
  
  static int cc33xx_op_assign_vif_chanctx(struct ieee80211_hw *hw,
  					struct ieee80211_vif *vif,
@@ -301,7 +302,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  					struct ieee80211_chanctx_conf *ctx)
  {
  	struct cc33xx *wl = hw->priv;
-@@ -4348,7 +4345,6 @@ static int cc33xx_op_assign_vif_chanctx(struct ieee80211_hw *hw,
+@@ -4488,7 +4485,6 @@ static int cc33xx_op_assign_vif_chanctx(struct ieee80211_hw *hw,
  
  static void cc33xx_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
  					   struct ieee80211_vif *vif,
@@ -309,7 +310,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  					   struct ieee80211_chanctx_conf *ctx)
  {
  	struct cc33xx *wl = hw->priv;
-@@ -4454,8 +4450,7 @@ enum {
+@@ -4594,8 +4590,7 @@ enum {
  };
  
  static int cc33xx_op_conf_tx(struct ieee80211_hw *hw,
@@ -319,7 +320,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  			     const struct ieee80211_tx_queue_params *params)
  {
  	struct cc33xx *wl = hw->priv;
-@@ -5163,8 +5158,8 @@ static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
+@@ -5303,8 +5298,8 @@ static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
  		return;
  
  	/* this callback is atomic, so schedule a new work */
@@ -330,7 +331,7 @@ index f6ed3561ccf5..3c5f8a3f8e36 100644
  	ieee80211_queue_work(hw, &wlvif->rc_update_work);
  }
  
-@@ -6040,7 +6035,7 @@ int wlcore_probe(struct cc33xx *wl, struct platform_device *pdev)
+@@ -6183,7 +6178,7 @@ int wlcore_probe(struct cc33xx *wl, struct platform_device *pdev)
  
  	if (pdev_data->family && pdev_data->family->nvs_name) {
  		nvs_name = pdev_data->family->nvs_name;
@@ -352,6 +353,46 @@ index 9f8ac1931250..a0d0fc35223c 100644
  }
  
  static void cc33xx_enable_line_irq(struct device *child)
+diff --git a/drivers/net/wireless/ti/cc33xx/sysfs.c b/drivers/net/wireless/ti/cc33xx/sysfs.c
+index 53e5a9acb46d..716a8bd21a73 100644
+--- a/drivers/net/wireless/ti/cc33xx/sysfs.c
++++ b/drivers/net/wireless/ti/cc33xx/sysfs.c
+@@ -64,7 +64,7 @@ static ssize_t regdomain_txControl_param_store(struct device *dev,
+ {
+ 	struct cc33xx *cc = dev_get_drvdata(dev);
+ 	struct acx_phy_regdomain_tx_control_params params;
+-	int ret;
++	int ret, i;
+ 	char* buffer;
+ 	char * pToken;
+ 	int converted_token = 0;
+@@ -112,7 +112,7 @@ static ssize_t regdomain_txControl_param_store(struct device *dev,
+ 
+ 	pToken = strsep(&buffer, " ");
+ 
+-	for(int i = 0; i < BLE_LIM_CHANNELS_COUNT ; i++)
++	for(i = 0; i < BLE_LIM_CHANNELS_COUNT ; i++)
+ 	{
+ 		ret = kstrtoint(pToken, 10, &converted_token);
+ 		if (ret < 0) 
+@@ -128,7 +128,7 @@ static ssize_t regdomain_txControl_param_store(struct device *dev,
+ 		pToken = strsep(&buffer, " ");
+ 	}
+ 
+-	for(int i = 0; i < BLE_LIM_CHANNELS_COUNT ;i++)
++	for(i = 0; i < BLE_LIM_CHANNELS_COUNT ;i++)
+ 	{
+ 
+ 		ret = kstrtoint(pToken, 10, &converted_token);
+@@ -159,7 +159,7 @@ static ssize_t regdomain_txControl_param_store(struct device *dev,
+ 
+ 	pToken = strsep(&buffer, " ");
+ 
+-	for(int i = 0; i < REG_RULES_COUNT ; i++)
++	for(i = 0; i < REG_RULES_COUNT ; i++)
+ 	{
+ 		ret = kstrtoint(pToken, 10, &converted_token);
+ 		if (ret < 0) 
 diff --git a/net/mac80211/mlme.c b/net/mac80211/mlme.c
 index af36f0e19712..48ca23713563 100644
 --- a/net/mac80211/mlme.c
