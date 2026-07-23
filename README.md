@@ -31,7 +31,7 @@ version:
 | 6.12.y | [1.0.2.10](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.10) |
 | 6.18.y | [1.0.2.10](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.10) |
 | ti-linux-6.6.y | [1.0.2.10](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.10) |
-| ti-linux-6.12.y | [1.0.2.14](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.14) |
+| ti-linux-6.12.y | [1.0.2.17](https://www.ti.com/tool/download/CC33XX-LINUX-MPU/1.0.2.17) |
 
 ## Features
 
