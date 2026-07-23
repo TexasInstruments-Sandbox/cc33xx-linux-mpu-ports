@@ -1,0 +1,57 @@
+From ab56516078918857ce0b9eda3911b3a43a4cba47 Mon Sep 17 00:00:00 2001
+From: Sabeeh Khan <sabeeh-khan@ti.com>
+Date: Thu, 23 Jul 2026 17:02:42 -0500
+Subject: [PATCH] drivers: cc33xx: forward port cc33xx 1.0.2.17 SDK to
+ linux-6.6.y
+
+---
+ drivers/net/wireless/ti/Makefile       | 1 +
+ drivers/net/wireless/ti/cc33xx/main.c  | 2 ++
+ drivers/net/wireless/ti/cc33xx/sysfs.c | 2 +-
+ 3 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ti/Makefile b/drivers/net/wireless/ti/Makefile
+index 05ee016594f8..4356f58b4b98 100644
+--- a/drivers/net/wireless/ti/Makefile
++++ b/drivers/net/wireless/ti/Makefile
+@@ -3,3 +3,4 @@ obj-$(CONFIG_WLCORE)			+= wlcore/
+ obj-$(CONFIG_WL12XX)			+= wl12xx/
+ obj-$(CONFIG_WL1251)			+= wl1251/
+ obj-$(CONFIG_WL18XX)			+= wl18xx/
++obj-$(CONFIG_CC33XX)			+= cc33xx/
+diff --git a/drivers/net/wireless/ti/cc33xx/main.c b/drivers/net/wireless/ti/cc33xx/main.c
+index bf696970dbe4..0e9240a24cdf 100644
+--- a/drivers/net/wireless/ti/cc33xx/main.c
++++ b/drivers/net/wireless/ti/cc33xx/main.c
+@@ -5461,6 +5461,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+ 	.prepare_multicast = cc33xx_op_prepare_multicast,
+ 	.configure_filter = cc33xx_op_configure_filter,
+ 	.tx = cc33xx_op_tx,
++	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
+ 	.set_key = cc33xx_op_set_key,
+ 	.hw_scan = cc33xx_op_hw_scan,
+ 	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
+@@ -5537,6 +5538,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+ 	.prepare_multicast = cc33xx_op_prepare_multicast,
+ 	.configure_filter = cc33xx_op_configure_filter,
+ 	.tx = cc33xx_op_tx,
++	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
+ 	.set_key = cc33xx_op_set_key,
+ 	.hw_scan = cc33xx_op_hw_scan,
+ 	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
+diff --git a/drivers/net/wireless/ti/cc33xx/sysfs.c b/drivers/net/wireless/ti/cc33xx/sysfs.c
+index 8d0ce7c80ae4..164635dc1b15 100644
+--- a/drivers/net/wireless/ti/cc33xx/sysfs.c
++++ b/drivers/net/wireless/ti/cc33xx/sysfs.c
+@@ -136,7 +136,7 @@ static ssize_t regdomain_txControl_param_store(struct device *dev,
+ {
+ 	struct cc33xx *cc = dev_get_drvdata(dev);
+ 	struct acx_phy_regdomain_tx_control_params params;
+-	int ret;
++	int ret = 0;
+ 	char* buffer;
+ 	char * pToken;
+ 	int converted_token = 0;
+-- 
+2.34.1
+
