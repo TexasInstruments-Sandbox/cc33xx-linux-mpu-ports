@@ -1,19 +1,19 @@
-From 070cb2fccd2992daf4f36a1927aeff76a4d6a5c4 Mon Sep 17 00:00:00 2001
+From 8e9d13c96bbe59a2bf501ef3a4b077a0137524a4 Mon Sep 17 00:00:00 2001
 From: Sabeeh Khan <sabeeh-khan@ti.com>
 Date: Tue, 2 Jun 2026 14:34:30 -0500
 Subject: [PATCH] forward port cc33xx 1.0.2.17 SDK to 6.18.y
 
 ---
- arch/arm64/configs/defconfig           |  8 +++++--
- drivers/bluetooth/btti_main.c          |  4 +---
+ arch/arm64/configs/defconfig           |  8 +++-
+ drivers/bluetooth/btti_main.c          |  4 +-
  drivers/net/wireless/ti/Makefile       |  1 +
  drivers/net/wireless/ti/cc33xx/boot.c  |  1 +
- drivers/net/wireless/ti/cc33xx/event.c |  4 ++--
- drivers/net/wireless/ti/cc33xx/main.c  | 30 ++++++++++++------------
+ drivers/net/wireless/ti/cc33xx/event.c |  4 +-
+ drivers/net/wireless/ti/cc33xx/main.c  | 60 ++++++++++++++++---------
  drivers/net/wireless/ti/cc33xx/sysfs.c |  2 +-
- net/mac80211/mlme.c                    | 22 ------------------
- net/mac80211/wpa.c                     | 32 +++++++++++++-------------
- 9 files changed, 43 insertions(+), 61 deletions(-)
+ net/mac80211/mlme.c                    | 61 +++++++++++++++-----------
+ net/mac80211/wpa.c                     | 32 +++++++-------
+ 9 files changed, 104 insertions(+), 69 deletions(-)
 
 diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
 index 32861d08a3b82..9806163e63666 100644
@@ -89,7 +89,7 @@ index 4406b881805e1..0638fc1cee934 100644
  	}
  }
 diff --git a/drivers/net/wireless/ti/cc33xx/main.c b/drivers/net/wireless/ti/cc33xx/main.c
-index 7653ac7dbf4b5..fd2e84f341548 100644
+index 7653ac7dbf4b5..791aedf7fad26 100644
 --- a/drivers/net/wireless/ti/cc33xx/main.c
 +++ b/drivers/net/wireless/ti/cc33xx/main.c
 @@ -2275,7 +2275,7 @@ static void cc33xx_turn_off(struct cc33xx *cc)
@@ -110,16 +110,43 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  
  	cc33xx_cmd_stop_channel_switch(cc, wlvif);
  
-@@ -3022,7 +3022,7 @@ static int cc33xx_set_assoc(struct cc33xx *cc, struct cc33xx_vif *wlvif,
+@@ -3014,6 +3014,26 @@ static int cc33xx_set_ssid(struct cc33xx *cc, struct cc33xx_vif *wlvif)
+ 	return 0;
+ }
+ 
++/*
++ * cc33xx firmware's channel_type field only encodes HT20/HT40+/- (see
++ * enum cc33xx_channel_type); cfg80211_get_chandef_type() WARN_ON()s on
++ * anything wider (80/160 MHz etc.), which VHT/HE connections can produce.
++ * Collapse those to the HT40 direction of the primary channel instead.
++ */
++static enum nl80211_channel_type
++cc33xx_get_chandef_ht_type(const struct cfg80211_chan_def *chandef)
++{
++	switch (chandef->width) {
++	case NL80211_CHAN_WIDTH_20_NOHT:
++		return NL80211_CHAN_NO_HT;
++	case NL80211_CHAN_WIDTH_20:
++		return NL80211_CHAN_HT20;
++	default:
++		return chandef->center_freq1 > chandef->chan->center_freq ?
++			NL80211_CHAN_HT40PLUS : NL80211_CHAN_HT40MINUS;
++	}
++}
++
+ static int cc33xx_set_assoc(struct cc33xx *cc, struct cc33xx_vif *wlvif,
+ 			    struct ieee80211_bss_conf *bss_conf,
+ 			    struct ieee80211_sta *sta,
+@@ -3022,7 +3042,7 @@ static int cc33xx_set_assoc(struct cc33xx *cc, struct cc33xx_vif *wlvif,
  	int ret;
  
  	wlvif->aid = vif->cfg.aid;
 -	wlvif->channel_type = cfg80211_get_chandef_type(&bss_conf->chandef);
-+	wlvif->channel_type = cfg80211_get_chandef_type(&bss_conf->chanreq.oper);
++	wlvif->channel_type = cc33xx_get_chandef_ht_type(&bss_conf->chanreq.oper);
  	wlvif->beacon_int = bss_conf->beacon_int;
  	wlvif->wmm_enabled = bss_conf->qos;
  
-@@ -3082,7 +3082,7 @@ static int cc33xx_unset_assoc(struct cc33xx *cc, struct cc33xx_vif *wlvif)
+@@ -3082,7 +3102,7 @@ static int cc33xx_unset_assoc(struct cc33xx *cc, struct cc33xx_vif *wlvif)
  		struct ieee80211_vif *vif = cc33xx_wlvif_to_vif(wlvif);
  
  		cc33xx_cmd_stop_channel_switch(cc, wlvif);
@@ -128,7 +155,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  		cancel_delayed_work(&wlvif->channel_switch_work);
  	}
  
-@@ -3132,7 +3132,7 @@ static int cc33xx_config_vif(struct cc33xx *cc, struct cc33xx_vif *wlvif,
+@@ -3132,7 +3152,7 @@ static int cc33xx_config_vif(struct cc33xx *cc, struct cc33xx_vif *wlvif,
  	return 0;
  }
  
@@ -137,7 +164,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  {
  	struct cc33xx *cc = hw->priv;
  	struct cc33xx_vif *wlvif;
-@@ -3812,12 +3812,12 @@ static int cc33xx_op_sched_scan_stop(struct ieee80211_hw *hw,
+@@ -3812,12 +3832,12 @@ static int cc33xx_op_sched_scan_stop(struct ieee80211_hw *hw,
  	return 0;
  }
  
@@ -152,7 +179,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  {
  	return 0;
  }
-@@ -4342,7 +4342,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *cc,
+@@ -4342,7 +4362,7 @@ static void cc33xx_bss_info_changed_sta(struct cc33xx *cc,
  
  	/* Handle new association with HT. Do this after join. */
  	if (sta_exists) {
@@ -161,7 +188,52 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  						NL80211_CHAN_WIDTH_20_NOHT;
  		cc33xx_debug(DEBUG_CMD, "+++Debug cc33xx_hw_set_peer_cap %x",
  					wlvif->rate_set);
-@@ -5203,7 +5203,7 @@ static void cc33xx_op_channel_switch(struct ieee80211_hw *hw,
+@@ -4472,7 +4492,7 @@ static int cc33xx_op_add_chanctx(struct ieee80211_hw *hw,
+ {
+ 	cc33xx_debug(DEBUG_MAC80211, "mac80211 add chanctx %d (type %d)",
+ 		     ieee80211_frequency_to_channel(ctx->def.chan->center_freq),
+-		     cfg80211_get_chandef_type(&ctx->def));
++		     cc33xx_get_chandef_ht_type(&ctx->def));
+ 	return 0;
+ }
+ 
+@@ -4481,7 +4501,7 @@ static void cc33xx_op_remove_chanctx(struct ieee80211_hw *hw,
+ {
+ 	cc33xx_debug(DEBUG_MAC80211, "mac80211 remove chanctx %d (type %d)",
+ 		     ieee80211_frequency_to_channel(ctx->def.chan->center_freq),
+-		     cfg80211_get_chandef_type(&ctx->def));
++		     cc33xx_get_chandef_ht_type(&ctx->def));
+ }
+ 
+ static void cc33xx_op_change_chanctx(struct ieee80211_hw *hw,
+@@ -4494,7 +4514,7 @@ static void cc33xx_op_change_chanctx(struct ieee80211_hw *hw,
+ 
+ 	cc33xx_debug(DEBUG_MAC80211,
+ 		     "mac80211 change chanctx %d (type %d) changed 0x%x",
+-		     channel, cfg80211_get_chandef_type(&ctx->def), changed);
++		     channel, cc33xx_get_chandef_ht_type(&ctx->def), changed);
+ 
+ 	mutex_lock(&cc->mutex);
+ 
+@@ -4546,7 +4566,7 @@ static int cc33xx_op_assign_vif_chanctx(struct ieee80211_hw *hw,
+ 
+ 	wlvif->band = ctx->def.chan->band;
+ 	wlvif->channel = channel;
+-	wlvif->channel_type = cfg80211_get_chandef_type(&ctx->def);
++	wlvif->channel_type = cc33xx_get_chandef_ht_type(&ctx->def);
+ 
+ 	/* update default rates according to the band */
+ 	cc33xx_set_band_rate(cc, wlvif);
+@@ -4613,7 +4633,7 @@ static int cc33xx_switch_vif_chan(struct cc33xx *cc, struct cc33xx_vif *wlvif,
+ 
+ 	wlvif->band = new_ctx->def.chan->band;
+ 	wlvif->channel = channel;
+-	wlvif->channel_type = cfg80211_get_chandef_type(&new_ctx->def);
++	wlvif->channel_type = cc33xx_get_chandef_ht_type(&new_ctx->def);
+ 
+ 	if (wlvif->bss_type != BSS_TYPE_AP_BSS)
+ 		return 0;
+@@ -5203,7 +5223,7 @@ static void cc33xx_op_channel_switch(struct ieee80211_hw *hw,
  
  	if (unlikely(cc->state == CC33XX_STATE_OFF)) {
  		if (test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))
@@ -170,7 +242,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  		goto out;
  	} else if (unlikely(cc->state != CC33XX_STATE_ON)) {
  		goto out;
-@@ -5370,7 +5370,7 @@ static int cc33xx_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
+@@ -5370,7 +5390,7 @@ static int cc33xx_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
  
  static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
  				    struct ieee80211_vif *vif,
@@ -179,7 +251,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  				    u32 changed)
  {
  	struct cc33xx_vif *wlvif = cc33xx_vif_to_data(vif);
-@@ -5381,8 +5381,8 @@ static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
+@@ -5381,8 +5401,8 @@ static void cc33xx_op_sta_rc_update(struct ieee80211_hw *hw,
  		return;
  
  	/* this callback is atomic, so schedule a new work */
@@ -190,7 +262,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  	ieee80211_queue_work(hw, &wlvif->rc_update_work);
  }
  
-@@ -5461,6 +5461,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+@@ -5461,6 +5481,7 @@ static const struct ieee80211_ops cc33xx_ops = {
  	.prepare_multicast = cc33xx_op_prepare_multicast,
  	.configure_filter = cc33xx_op_configure_filter,
  	.tx = cc33xx_op_tx,
@@ -198,7 +270,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  	.set_key = cc33xx_op_set_key,
  	.hw_scan = cc33xx_op_hw_scan,
  	.cancel_hw_scan = cc33xx_op_cancel_hw_scan,
-@@ -5488,7 +5489,7 @@ static const struct ieee80211_ops cc33xx_ops = {
+@@ -5488,7 +5509,7 @@ static const struct ieee80211_ops cc33xx_ops = {
  	.assign_vif_chanctx = cc33xx_op_assign_vif_chanctx,
  	.unassign_vif_chanctx = cc33xx_op_unassign_vif_chanctx,
  	.switch_vif_chanctx = cc33xx_op_switch_vif_chanctx,
@@ -207,7 +279,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  	.sta_statistics = cc33xx_op_sta_statistics,
  	.get_expected_throughput = cc33xx_op_get_expected_throughput,
  	CFG80211_TESTMODE_CMD(cc33xx_tm_cmd)
-@@ -6250,7 +6251,7 @@ static void cc33xx_nvs_cb(const struct firmware *fw, void *context)
+@@ -6250,7 +6271,7 @@ static void cc33xx_nvs_cb(const struct firmware *fw, void *context)
  	cc33xx_debug(DEBUG_CC33xx, "cc33xx_nvs_cb Complete");	
  }
  
@@ -216,7 +288,7 @@ index 7653ac7dbf4b5..fd2e84f341548 100644
  {
  	struct cc33xx_platdev_data *pdev_data = dev_get_platdata(&pdev->dev);
  	struct cc33xx *cc = platform_get_drvdata(pdev);
-@@ -6278,7 +6279,6 @@ int cc33xx_remove(struct platform_device *pdev)
+@@ -6278,7 +6299,6 @@ int cc33xx_remove(struct platform_device *pdev)
  
  out:
  	cc33xx_free_hw(cc);
@@ -238,7 +310,7 @@ index 8d0ce7c80ae41..a9962261f15ae 100644
  {
  	struct device *dev = container_of(kobj, struct device, kobj);
 diff --git a/net/mac80211/mlme.c b/net/mac80211/mlme.c
-index ee672208dcf54..bcc4090ddc1a5 100644
+index ee672208dcf54..c41a46ec08805 100644
 --- a/net/mac80211/mlme.c
 +++ b/net/mac80211/mlme.c
 @@ -1740,9 +1740,6 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
@@ -277,6 +349,82 @@ index ee672208dcf54..bcc4090ddc1a5 100644
  		if (link)
  			link->conf->mu_mimo_owner = mu_mimo_owner;
  		ADD_PRESENT_ELEM(WLAN_EID_VHT_CAPABILITY);
+@@ -5327,7 +5305,9 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
+ 	     (link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HT &&
+ 	      (!elems->ht_cap_elem || !elems->ht_operation)) ||
+ 	     (is_5ghz && link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_VHT &&
+-	      (!elems->vht_cap_elem || !elems->vht_operation)))) {
++	      (!elems->vht_cap_elem || !elems->vht_operation)) ||
++	     (link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE &&
++	      (!elems->he_cap || !elems->he_operation)))) {
+ 		const struct cfg80211_bss_ies *ies;
+ 		struct ieee802_11_elems *bss_elems;
+ 
+@@ -5391,6 +5371,21 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
+ 					   "AP bug: VHT operation missing from AssocResp\n");
+ 			}
+ 		}
++
++		if (!elems->he_cap && bss_elems->he_cap &&
++		    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE) {
++			elems->he_cap = bss_elems->he_cap;
++			elems->he_cap_len = bss_elems->he_cap_len;
++			sdata_info(sdata,
++				   "AP bug: HE capability missing from AssocResp\n");
++		}
++		if (!elems->he_operation && bss_elems->he_operation &&
++		    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE) {
++			elems->he_operation = bss_elems->he_operation;
++			sdata_info(sdata,
++				   "AP bug: HE operation missing from AssocResp\n");
++		}
++
+ 		kfree(bss_elems);
+ 	}
+ 
+@@ -5416,6 +5411,14 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
+ 		goto out;
+ 	}
+ 
++	if (link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE &&
++	    (!elems->he_cap || !elems->he_operation)) {
++		sdata_info(sdata,
++			   "HE AP is missing HE capability/operation\n");
++		ret = false;
++		goto out;
++	}
++
+ 	/* check/update if AP changed anything in assoc response vs. scan */
+ 	if (ieee80211_config_bw(link, elems,
+ 				link_id == assoc_data->assoc_link_id,
+@@ -5884,10 +5887,16 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
+ 		bool have_80mhz = false;
+ 		unsigned int i;
+ 
++		/*
++		 * HT stuck at 20 MHz is an RF design limit on some radios,
++		 * not proof VHT/HE can't run at 20 MHz either - keep going
++		 * instead of falling all the way back to HT.
++		 */
+ 		if (conn->bw_limit == IEEE80211_CONN_BW_LIMIT_20) {
+ 			mlme_link_id_dbg(sdata, link_id,
+-					 "no 40 MHz support on 5 GHz, limiting to HT\n");
+-			goto out;
++					 "no 40 MHz support on 5 GHz, limiting VHT/HE to 20 MHz\n");
++			conn->mode = IEEE80211_CONN_MODE_VHT;
++			goto vht_bw_done;
+ 		}
+ 
+ 		/* Allow VHT if at least one channel on the sband supports 80 MHz */
+@@ -5926,6 +5935,8 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
+ 				 "no VHT 160 MHz capability on 5 GHz, limiting to 80 MHz");
+ 	}
+ 
++vht_bw_done:
++
+ 	if (req && req->flags & ASSOC_REQ_DISABLE_HE) {
+ 		mlme_link_id_dbg(sdata, link_id,
+ 				 "HE disabled by flag, limiting to HT/VHT\n");
 diff --git a/net/mac80211/wpa.c b/net/mac80211/wpa.c
 index 4ecb4289c5e69..bb0fa505cdcae 100644
 --- a/net/mac80211/wpa.c
